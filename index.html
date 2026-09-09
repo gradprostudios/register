@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grad Pro Studios — Student Portal</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" type="image/png" href="GPS.png">
+<!-- <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" defer></script> -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- AUTH SHELL: login / register / verify-gate / forgot-password   -->
+<!-- ============================================================ -->
+<div class="shell" id="authShell">
+  <div class="panel-left">
+
+    <!-- BRAND LOGO -->
+    <div class="brand-row">
+      <img src="GPS.png" alt="Grad Pro Studios Logo" class="brand-logo">
+    </div>
+
+    <div class="seal-wrap">
+
+      <h1 class="headline">
+        graduation na,<br>
+        <em>grad pro na!</em>
+      </h1>
+
+      <p class="subcopy">
+        Professional graduation pictorials and yearbook photography crafted
+        for students who've earned their spotlight. Beautiful, timeless,
+        unforgettable.
+      </p>
+    </div>
+
+    <div class="ribbon-steps">
+      <div class="ribbon-step" id="stepAccount">
+        <span class="dot"></span>Create your account
+      </div>
+
+      <div class="ribbon-step" id="stepVerify">
+        <span class="dot"></span>Verify your email
+      </div>
+
+      <div class="ribbon-step" id="stepPortal">
+        <span class="dot"></span>Manage your student portal
+      </div>
+    </div>
+
+  </div>
+
+  <div class="panel-right">
+
+    <!-- ---------------- LOGIN VIEW ---------------- -->
+    <div class="card" id="view-login">
+      <div class="eyebrow card-eyebrow">Student Portal</div>
+      <h2 class="card-title">Log in</h2>
+      <p class="card-sub">New here? <a href="#" id="goToRegister">Register for an account</a> instead.</p>
+
+      <div id="loginAlert"></div>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="loginEmail">Username</label>
+          <input type="text" id="loginEmail" required autocomplete="username" placeholder="e.g. mariasantos">
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <div class="password-wrap">
+            <input type="password" id="loginPassword" required autocomplete="current-password" placeholder="••••••••">
+            <button type="button" class="pw-toggle" data-target="loginPassword" aria-label="Show password" aria-pressed="false">
+              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="forgot-links">
+          <a href="#" id="goToForgot">Forgot password or username?</a>
+        </div>
+        <div class="field" id="turnstileLogin"></div>
+        <button type="submit" class="btn btn-primary" id="loginSubmit">Log in</button>
+      </form>
+    </div>
+
+    <!-- ---------------- REGISTER VIEW ---------------- -->
+    <div class="card hidden" id="view-register">
+      <div class="eyebrow card-eyebrow">Student Portal</div>
+      <h2 class="card-title">Register</h2>
+      <p class="card-sub">Already registered? <a href="#" id="goToLogin">Log in</a> instead.</p>
+      <div id="selectedPackageBanner" class="hidden" style="margin-bottom:18px; padding:12px 14px; border:1.5px solid var(--maroon); border-radius:9px; background:rgba(178,34,34,0.05); font-size:13px; color:var(--maroon);">
+  Selected package: <strong id="selectedPackageText"></strong>
+</div>
+
+      <div id="registerAlert"></div>
+
+      <form id="registerForm">
+        <div class="field">
+          <label for="regUsername">Username</label>
+          <input type="text" id="regUsername" required minlength="3" maxlength="24" pattern="[a-zA-Z0-9_.]+" autocomplete="username" placeholder="e.g. mariasantos">
+        </div>
+        <div class="field">
+          <label for="regEmail">Email address</label>
+          <input type="email" id="regEmail" required autocomplete="email" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="regPassword">Password</label>
+          <div class="password-wrap">
+            <input type="password" id="regPassword" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
+            <button type="button" class="pw-toggle" data-target="regPassword" aria-label="Show password" aria-pressed="false">
+              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="regPasswordConfirm">Confirm password</label>
+          <div class="password-wrap">
+            <input type="password" id="regPasswordConfirm" required autocomplete="new-password" minlength="8" placeholder="Re-enter your password">
+            <button type="button" class="pw-toggle" data-target="regPasswordConfirm" aria-label="Show password" aria-pressed="false">
+              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="field consent-field">
+          <label class="consent-label">
+            <input type="checkbox" id="regConsent" required>
+            <span>
+              I agree to the <a href="#" class="link">Terms &amp; Conditions</a> and consent to
+              Grad Pro Studios collecting and storing my registration details
+              (name, contact information, school records, and photos) to
+              process my graduation photography services. My information
+              will be kept confidential and used only for this purpose, in
+              accordance with the Data Privacy Act of 2012 (RA 10173).
+            </span>
+          </label>
+        </div>
+
+        <div class="field" id="turnstileRegister"></div>
+        <button type="submit" class="btn btn-primary" id="registerSubmit">Create account</button>
+      </form>
+    </div>
+
+    <!-- ---------------- VERIFY-EMAIL GATE ---------------- -->
+    <div class="card hidden" id="view-verify">
+      <div class="status-tag" id="verifyStatusTag">Awaiting verification</div>
+      <h2 class="card-title">Check your inbox</h2>
+      <p class="card-sub" id="verifyCopy">
+        We sent a 6-digit verification code to <strong id="verifyEmailShown">your email</strong>. Enter it below to unlock your dashboard.
+      </p>
+
+      <div id="verifyAlert"></div>
+
+      <form id="otpForm">
+        <div class="field">
+          <label for="otpCode">Verification code</label>
+          <input type="text" id="otpCode" required inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+        </div>
+        <button type="submit" class="btn btn-primary" id="otpSubmit">Verify code</button>
+      </form>
+
+      <div class="field" id="turnstileResend"></div>
+      <button class="btn btn-ghost" id="resendBtn" style="margin-top:12px; margin-bottom:12px;">Resend verification code</button>
+      <button class="btn btn-ghost" id="backToLoginFromVerify">Back to login</button>
+    </div>
+
+    <!-- ---------------- FORGOT PASSWORD / USERNAME — step 1: request code ---------------- -->
+    <div class="card hidden" id="view-forgot">
+      <div class="eyebrow card-eyebrow">Student Portal</div>
+      <h2 class="card-title">Forgot password?</h2>
+      <p class="card-sub">
+        Enter your username. On the next screen, confirm the email
+        registered to that account to set a new password.
+      </p>
+
+      <div id="forgotAlert"></div>
+
+      <form id="forgotForm">
+        <div class="field">
+          <label for="forgotEmail">Username</label>
+          <input type="text" id="forgotEmail" required autocomplete="username" placeholder="e.g. mariasantos">
+        </div>
+        <button type="submit" class="btn btn-primary" id="forgotSubmit">Continue</button>
+      </form>
+
+      <button class="btn btn-ghost" id="backToLoginFromForgot" style="margin-top:12px;">Back to login</button>
+    </div>
+
+    <!-- ---------------- FORGOT PASSWORD — step 2: confirm email + new password ---------------- -->
+    <div class="card hidden" id="view-reset">
+      <div class="eyebrow card-eyebrow">Student Portal</div>
+      <h2 class="card-title">Reset your password</h2>
+      <p class="card-sub" id="resetCopy">
+        Confirm the email registered to <strong id="resetEmailShown">this account</strong>, then choose a new password.
+      </p>
+
+      <div id="resetAlert"></div>
+
+      <form id="resetForm">
+        <div class="field">
+          <label for="resetCode">Email address</label>
+          <input type="email" id="resetCode" required autocomplete="email" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="resetPassword">New password</label>
+          <div class="password-wrap">
+            <input type="password" id="resetPassword" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
+            <button type="button" class="pw-toggle" data-target="resetPassword" aria-label="Show password" aria-pressed="false">
+              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="resetPasswordConfirm">Confirm new password</label>
+          <div class="password-wrap">
+            <input type="password" id="resetPasswordConfirm" required autocomplete="new-password" minlength="8" placeholder="Re-enter your new password">
+            <button type="button" class="pw-toggle" data-target="resetPasswordConfirm" aria-label="Show password" aria-pressed="false">
+              <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="resetSubmit">Update password</button>
+      </form>
+
+      <button class="btn btn-ghost" id="backToLoginFromReset" style="margin-top:12px;">Back to login</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- STEP 2: STUDENT INFORMATION — standalone, no branding panel,   -->
+<!-- just the form. Shown right after email verification succeeds. -->
+<!-- ============================================================ -->
+<div class="step2-page hidden" id="step2Shell">
+  <div class="step2-card">
+    <h2 class="step2-heading">STUDENT INFORMATION</h2>
+
+    <div id="step2Alert"></div>
+
+    <form id="step2Form">
+      <div class="field-row">
+        <div class="field">
+          <label for="s2LastName">Last Name<span class="req-star">*</span></label>
+          <input type="text" id="s2LastName" required placeholder="e.g. Dela Cruz">
+        </div>
+        <div class="field">
+          <label for="s2FirstName">First Name<span class="req-star">*</span></label>
+          <input type="text" id="s2FirstName" required placeholder="Enter the first name, and second name if any (e.g. Juan Miguel)">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="s2MiddleInitial">Middle Initial</label>
+          <input type="text" id="s2MiddleInitial" maxlength="1" placeholder="M.I.">
+        </div>
+        <div class="field">
+          <label for="s2Suffix">Suffix</label>
+          <input type="text" id="s2Suffix" placeholder="Jr., Sr., III">
+        </div>
+      </div>
+
+      <div class="field" id="s2SuffixPlacementWrap">
+        <label>Suffix Placement</label>
+        <div class="radio-row">
+          <label><input type="radio" name="s2SuffixPlacement" value="none" checked> None</label>
+          <label><input type="radio" name="s2SuffixPlacement" value="last"> After Last Name</label>
+          <label><input type="radio" name="s2SuffixPlacement" value="first"> After First Name</label>
+        </div>
+      </div>
+
+      <div class="field suggest-wrap">
+        <label for="s2Gender">Gender<span class="req-star">*</span></label>
+        <input type="text" id="s2Gender" required autocomplete="off" placeholder="Type to search...">
+        <div class="suggest-list" id="s2GenderList"></div>
+      </div>
+
+      <div class="field suggest-wrap">
+        <label for="s2School">School<span class="req-star">*</span></label>
+        <input type="text" id="s2School" required autocomplete="off" placeholder="Type to search your school">
+        <div class="suggest-list" id="s2SchoolList"></div>
+      </div>
+
+      <div class="field suggest-wrap">
+        <label for="s2College">College</label>
+        <input type="text" id="s2College" autocomplete="off" placeholder="Type to search (leave blank if none)">
+        <div class="suggest-list" id="s2CollegeList"></div>
+      </div>
+
+      <div class="field-row">
+        <div class="field suggest-wrap">
+          <label for="s2Course">Course</label>
+          <input type="text" id="s2Course" autocomplete="off" placeholder="Type to search your course">
+          <div class="suggest-list" id="s2CourseList"></div>
+        </div>
+        <div class="field suggest-wrap">
+          <label for="s2Major">Major</label>
+          <input type="text" id="s2Major" autocomplete="off" placeholder="Type to search (leave blank if none)">
+          <div class="suggest-list" id="s2MajorList"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="s2Contact">Contact Number<span class="req-star">*</span></label>
+        <input type="text" id="s2Contact" required placeholder="Active mobile number we can reach you on">
+      </div>
+
+      <div class="field">
+        <label for="s2Socials">Socials (Facebook name, etc.)</label>
+        <input type="text" id="s2Socials" placeholder="Facebook or Instagram, in case we can't reach your number or email">
+      </div>
+
+      <div class="field">
+        <span class="eyebrow" style="display:block; text-align:center; margin-bottom:6px;">Name Preview</span>
+        <div class="name-preview-banner" id="s2NamePreview">—</div>
+      </div>
+
+      <div class="step2-actions">
+        <button type="button" class="btn btn-ghost" id="step2Cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="step2Submit">Next</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ============================================================ -->
+<!-- DASHBOARD (unlocked only after email verification)             -->
+<!-- ============================================================ -->
+<div class="dash" id="dashboard">
+  <div class="dash-shell">
+
+    <aside class="dash-sidebar">
+      <div class="side-brand">
+        <img src="GPS.png" alt="Grad Pro Studios" class="side-logo">
+      </div>
+
+      <button class="tabs-toggle" id="tabsToggle" aria-label="Toggle sections menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+
+      <div class="tabs" id="tabsList">
+        <button class="tab active" data-tab="tab-dashboard">Dashboard</button>
+        <button class="tab" data-tab="tab-payment">Payment Info</button>
+        <button class="tab" data-tab="tab-registration">Register</button>
+        <button class="tab" data-tab="tab-images">Uploaded Images</button>
+        <button class="tab" data-tab="tab-notice">Notice</button>
+        <button class="tab" data-tab="tab-appointments">Appointments</button>
+      </div>
+
+      <button class="signout" id="signOutBtn">Sign out</button>
+    </aside>
+
+    <main class="dash-main">
+
+      <!-- DASHBOARD -->
+      <div class="tab-panel active" id="tab-dashboard">
+        <div class="db-banner">
+          <div class="db-carousel" id="dbCarousel"></div>
+          <div class="db-banner-text">
+            <span class="eyebrow" id="dbDate"></span>
+            <h1 id="dashGreeting">Welcome</h1>
+            <p id="dashSub">Always stay updated in your student portal.</p>
+          </div>
+          <div class="db-dots" id="dbDots"></div>
+        </div>
+
+        <h3 class="db-section-title">Finance</h3>
+        <div class="db-finance-grid">
+          <div class="db-finance-card">
+            <div class="db-finance-amount" id="dbTotalPayable">₱0</div>
+            <div class="db-finance-label">Total Payable</div>
+          </div>
+          <div class="db-finance-card highlight">
+            <div class="db-finance-amount" id="dbTotalPaid">₱0</div>
+            <div class="db-finance-label">Total Paid</div>
+          </div>
+          <div class="db-finance-card">
+            <div class="db-finance-amount" id="dbOthers">₱0</div>
+            <div class="db-finance-label">Others</div>
+          </div>
+        </div>
+
+         <div class="db-columns">
+          <!-- <div class="stub-card">
+            <h3>Studio Team</h3>
+            <div class="db-team-row" id="dbTeamRow"></div>
+          </div> -->
+          <div class="stub-card">
+            <div class="stub-card-header"> 
+              <h3>Daily Notice</h3>
+              <button class="btn-ghost btn-inline" data-goto-tab="tab-notice">See all</button>
+            </div>
+            <div id="dbNoticeList"><div class="stub-empty">Loading…</div></div>
+          </div>
+        </div>  
+      </div>
+
+      <!-- PAYMENT INFO (under construction) -->
+      <div class="tab-panel" id="tab-payment">
+        <div class="stub-card">
+          <h3>Payment Info</h3>
+          <p>Your payment records will appear here once studio staff finish setting up the admin billing tool.</p>
+          <div class="stub-empty">Under construction.</div>
+        </div>
+      </div>
+
+      <!-- REGISTRATION -->
+      <div class="tab-panel" id="tab-registration">
+        <div class="stub-card">
+          <div class="stub-card-header">
+            <div>
+              <h3>Your details</h3>
+            </div>
+            <button class="btn-ghost btn-inline" id="editProfileBtn">Edit Details</button>
+          </div>
+          <div id="profileAlert"></div>
+          <div class="profile-grid" id="profileGrid">
+            <!-- populated by JS -->
+          </div>
+          <div class="profile-edit-actions hidden" id="profileEditActions">
+            <button class="btn btn-primary" id="saveProfileBtn" type="button">Save changes</button>
+            <button class="btn btn-ghost" id="cancelProfileBtn" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- UPLOADED IMAGES (under construction) -->
+      <div class="tab-panel" id="tab-images">
+        <div class="stub-card">
+          <h3>Uploaded images</h3>
+          <p>Your school ID, raw shoot photos, and final edited images will be listed here once uploads open.</p>
+          <div class="stub-empty">No images uploaded yet.</div>
+        </div>
+      </div>
+
+      <!-- NOTICE (functional) -->
+      <div class="tab-panel" id="tab-notice">
+        <h3 class="db-section-title">All Notices</h3>
+        <div id="noticeFullList"><div class="stub-empty">Loading…</div></div>
+      </div>
+
+      <!-- APPOINTMENTS -->
+      <div class="tab-panel" id="tab-appointments">
+        <h3 class="db-section-title">Your Appointments</h3>
+        <div id="appointmentsList"><div class="stub-empty">Loading…</div></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ---------------- COOKIE CONSENT BANNER ---------------- -->
+<div class="cookie-banner hidden" id="cookieBanner">
+  <p class="cookie-text">
+    We use cookies to keep you logged in and improve your experience on this site.
+    By continuing to browse, you agree to our
+    <a href="#" class="link">Privacy Policy</a>.
+  </p>
+  <button class="btn btn-primary cookie-accept" id="cookieAcceptBtn">Accept</button>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
