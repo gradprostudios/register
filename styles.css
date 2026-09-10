@@ -43,7 +43,6 @@ body{
   .shell{grid-template-columns:1fr; grid-template-rows:auto 1fr;}
 }
 
-/* ---------- Left: ink panel ---------- */
 .panel-left{
   color:#B22222;
   padding:64px 56px;
@@ -57,8 +56,8 @@ body{
   .panel-left{padding:36px 28px 48px;}
   .brand-row{justify-content:center;}
   .brand-logo{margin:0 auto;}
-  .headline{width:100%; text-align:center; font-size:18px;}
-  .headline em{width:100%; text-align:center; font-size:32px;}
+  .headline{width:100%; text-align:center; font-size:8px;}
+  .headline em{font-size:8px;}
   .seal-wrap{gap:18px; margin:24px 0 28px;}
   .ribbon-steps{gap:12px; margin-top:60px;}
 }
@@ -103,7 +102,7 @@ body{
 .headline{
   font-family:'avant garde', sans-serif; font-style:italic; 
   font-weight:400;
-  font-size:clamp(32px, 3.4vw, 24px);
+  font-size:clamp(32px, 3.4vw, 8px);
   line-height:1.15;
   max-width:none;
   margin:0;
@@ -115,6 +114,10 @@ body{
   font-style:normal;
   color:rgb(0, 0, 0);
   font-weight:600;
+}
+@media (max-width:880px){
+  .headline{font-size:18px;}
+  .headline em{font-size:18px;}
 }
 .subcopy{
   font-size:15px;
