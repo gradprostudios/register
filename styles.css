@@ -57,8 +57,8 @@ body{
   .panel-left{padding:36px 28px 48px;}
   .brand-row{justify-content:center;}
   .brand-logo{margin:0 auto;}
-  .headline{width:100%; text-align:center;}
-  .headline em{width:100%; text-align:center;}
+  .headline{width:100%; text-align:center; font-size:18px;}
+  .headline em{width:100%; text-align:center; font-size:24px;}
 }
 
 .brand-row{
