@@ -100,7 +100,7 @@ body{
   100%{ transform:scale(1) rotate(0deg); opacity:1; }
 }
 .headline{
-  font-family:'avant garde', sans-serif; font-style:italic; 
+  font-family:'poppins', sans-serif; font-style:italic; 
   font-weight:400;
   font-size:clamp(32px, 3.4vw, 8px);
   line-height:1.15;
@@ -110,7 +110,7 @@ body{
 }
 .headline em{
   
-  font-family:'avant garde', sans-serif; font-style:italic; 
+  font-family:'poppins', sans-serif; font-style:italic; 
   font-style:normal;
   color:rgb(0, 0, 0);
   font-weight:600;
