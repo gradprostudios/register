@@ -55,6 +55,10 @@ body{
 }
 @media (max-width: 880px){
   .panel-left{padding:36px 28px 48px;}
+  .brand-row{justify-content:center;}
+  .brand-logo{margin:0 auto;}
+  .headline{width:100%; text-align:center;}
+  .headline em{width:100%; text-align:center;}
 }
 
 .brand-row{
@@ -97,10 +101,11 @@ body{
 .headline{
   font-family:'avant garde', sans-serif; font-style:italic; 
   font-weight:400;
-  font-size:clamp(32px, 3.4vw, 60px);
+  font-size:clamp(32px, 3.4vw, 24px);
   line-height:1.15;
   max-width:none;
   margin:0;
+  
 }
 .headline em{
   
