@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = "https://rkxuwluybpynxvguhqpn.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_uBCFBzLjcvRSK5ZcIevXZw_GzhneWhJ";
 
@@ -595,12 +596,14 @@ async function loadLookups(){
 function distinctSchools(){
   const seen = new Set();
   return DETAILS_ROWS.map(r => (r['Schools'] || '').trim())
-    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 function distinctColleges(){
   const seen = new Set();
   return DETAILS_ROWS.map(r => (r['College'] || '').trim())
-    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 function distinctGenders(){
   const seen = new Set();
@@ -610,12 +613,14 @@ function distinctGenders(){
 function distinctCourses(){
   const seen = new Set();
   return DETAILS_ROWS.map(r => (r['Course'] || '').trim())
-    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 function distinctMajors(){
   const seen = new Set();
   return DETAILS_ROWS.map(r => (r['Major'] || '').trim())
-    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 
 // ================================================================
@@ -838,7 +843,7 @@ async function loadDashboard(user, clientRow){
 }
 
 /* -------------------- DASHBOARD: carousel of studio output photos -------------------- */
-const CAROUSEL_FILES = ['sample1.jpg', 'sample2.jpg', 'sample3.jpg', 'sample4.jpg'];
+const CAROUSEL_FILES = ['sample1.jpg', 'sample2.jpg', 'sample3.jpg', 'sample4.jpg', 'sample5.jpg', 'sample6.jpg', 'sample7.jpg', 'sample8.jpg'];
 let dbSlideIndex = 0;
 let dbSlideTimer = null;
 let dbCarouselBuilt = false;
