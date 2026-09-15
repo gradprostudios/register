@@ -576,6 +576,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 let currentUser = null;      // Supabase Auth user (identity/verification/login)
 let currentProfile = null;   // Clients row (real registration data)
 let profileEditMode = false;
+const FIXED_SCHOOL = 'Central Mindanao University';
 
 // School/College/Course/Major/Gender options all come from the real
 // GradPro "Details" table — the exact same table Form1_StudentInfo.vb
@@ -594,10 +595,7 @@ async function loadLookups(){
 }
 
 function distinctSchools(){
-  const seen = new Set();
-  return DETAILS_ROWS.map(r => (r['Schools'] || '').trim())
-    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
-    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return [FIXED_SCHOOL];
 }
 function distinctColleges(){
   const seen = new Set();
@@ -1058,7 +1056,7 @@ function renderProfileGrid(){
     </div>
     <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_School">School<span class="req-star">*</span></label>
-      <input type="text" id="edit_School" value="${escapeHtml(p['School'] || '')}" autocomplete="off" placeholder="Type to search your school">
+      <input type="text" id="edit_School" value="${escapeHtml(FIXED_SCHOOL)}" readonly>
       <div class="suggest-list" id="edit_SchoolList"></div>
     </div>
     <div class="profile-field suggest-wrap">
@@ -1150,7 +1148,7 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   const middleInitial = val('edit_MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('edit_Suffix'));
   const gender = val('edit_Gender');
-  const school = val('edit_School');
+  const school = FIXED_SCHOOL;
   const contact = val('edit_Contact');
 
   if (!lastName) { alertBox('profileAlert', 'Last name is required.', 'error'); return; }
@@ -1228,10 +1226,11 @@ async function showStep2(){
   // previous person typed would still be sitting in these inputs since
   // the form itself never unmounts between registrations in the same tab.
   ['s2LastName','s2FirstName','s2MiddleInitial','s2Suffix',
-   's2Gender','s2School','s2College','s2Course','s2Major',
+   's2Gender','s2College','s2Course','s2Major',
    's2Contact','s2Socials'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  document.getElementById('s2School').value = FIXED_SCHOOL;
   const noneRadio = document.querySelector('input[name="s2SuffixPlacement"][value="none"]');
   if (noneRadio) noneRadio.checked = true;
   document.getElementById('s2NamePreview').textContent = '—';
@@ -1297,7 +1296,7 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   const middleInitial = val('s2MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('s2Suffix'));
   const gender = val('s2Gender');
-  const school = val('s2School');
+  const school = FIXED_SCHOOL;
   const contact = val('s2Contact');
 
   if (!lastName) { alertBox('step2Alert', 'Please enter Last Name.', 'error'); return; }
