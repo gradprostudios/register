@@ -370,12 +370,14 @@ input:focus-visible{outline:2px solid var(--maroon); outline-offset:1px;}
   border:none;
   background:transparent;
   box-shadow:none;
+  outline:none;
 }
 .tabs .signout-menu:hover,
 .tabs .signout-menu:focus{
   color:var(--maroon);
   border:none;
   background:rgba(178,34,34,0.06);
+  outline:none;
 }
 
 .dash-main{flex:1; padding:36px 44px 60px; max-width:1500px; margin:0 auto;}
