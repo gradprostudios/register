@@ -8,13 +8,13 @@
 <link rel="icon" type="image/png" href="GPS.png">
 <!-- <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" defer></script> -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-
+  
 <!-- Vercel Web Analytics -->
 <script>
   window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
 </script>
 <script defer src="/_vercel/insights/script.js"></script>
-
+  
 </head>
 <body>
 
@@ -87,7 +87,7 @@
           <button type="button" class="btn-social" id="loginGoogle"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Continue with Google</button>
           <button type="button" class="btn-social" id="loginFacebook"><svg viewBox="0 0 24 24"><path fill="#1877F2" d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.88v2.27h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>Continue with Facebook</button>
         </div>
-        <p class="social-note">By continuing with Google or Facebook, you agree to the Terms &amp; Conditions and consent to Grad Pro Studios collecting and storing your registration details in accordance with the Data Privacy Act of 2012 (RA 10173).</p>
+        <p class="social-note">By continuing with Google or Facebook, you agree to the <a href="terms.html" target="_blank" rel="noopener" class="link">Terms &amp; Conditions</a> and <a href="privacy.html" target="_blank" rel="noopener" class="link">Privacy Policy</a>, and consent to Grad Pro Studios collecting and storing your registration details in accordance with the Data Privacy Act of 2012 (RA 10173).</p>
       </form>
     </div>
 
@@ -136,7 +136,7 @@
           <label class="consent-label">
             <input type="checkbox" id="regConsent" required>
             <span>
-              I agree to the <a href="#" class="link">Terms &amp; Conditions</a> and consent to
+              I agree to the <a href="terms.html" target="_blank" rel="noopener" class="link">Terms &amp; Conditions</a> and <a href="privacy.html" target="_blank" rel="noopener" class="link">Privacy Policy</a>, and consent to
               Grad Pro Studios collecting and storing my registration details
               (name, contact information, school records, and photos) to
               process my graduation photography services. My information
@@ -154,7 +154,7 @@
           <button type="button" class="btn-social" id="regGoogle"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>Sign up with Google</button>
           <button type="button" class="btn-social" id="regFacebook"><svg viewBox="0 0 24 24"><path fill="#1877F2" d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.53-4.7 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.88v2.27h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>Sign up with Facebook</button>
         </div>
-        <p class="social-note">By continuing with Google or Facebook, you agree to the Terms &amp; Conditions and consent to Grad Pro Studios collecting and storing your registration details in accordance with the Data Privacy Act of 2012 (RA 10173).</p>
+        <p class="social-note">By continuing with Google or Facebook, you agree to the <a href="terms.html" target="_blank" rel="noopener" class="link">Terms &amp; Conditions</a> and <a href="privacy.html" target="_blank" rel="noopener" class="link">Privacy Policy</a>, and consent to Grad Pro Studios collecting and storing your registration details in accordance with the Data Privacy Act of 2012 (RA 10173).</p>
     </div>
 
     <!-- ---------------- VERIFY-EMAIL GATE ---------------- -->
@@ -180,20 +180,21 @@
       <button class="btn btn-ghost" id="backToLoginFromVerify">Back to login</button>
     </div>
 
-    <!-- ---------------- FORGOT PASSWORD / USERNAME — step 1 ---------------- -->
+    <!-- ---------------- FORGOT PASSWORD / USERNAME — step 1: request code ---------------- -->
     <div class="card hidden" id="view-forgot">
       <div class="eyebrow card-eyebrow">Student Portal</div>
       <h2 class="card-title">Forgot password?</h2>
       <p class="card-sub">
-        Enter your username or email. On the next screen, set a new password.
+        Enter your username. On the next screen, confirm the email
+        registered to that account to set a new password.
       </p>
 
       <div id="forgotAlert"></div>
 
       <form id="forgotForm">
         <div class="field">
-          <label for="forgotEmail">Username or Email</label>
-          <input type="text" id="forgotEmail" required autocomplete="username" placeholder="e.g. mariasantos or maria@email.com">
+          <label for="forgotEmail">Username</label>
+          <input type="text" id="forgotEmail" required autocomplete="username" placeholder="e.g. mariasantos">
         </div>
         <button type="submit" class="btn btn-primary" id="forgotSubmit">Continue</button>
       </form>
@@ -201,26 +202,20 @@
       <button class="btn btn-ghost" id="backToLoginFromForgot" style="margin-top:12px;">Back to login</button>
     </div>
 
-    <!-- ---------------- FORGOT PASSWORD — step 2 (OTP + new password) ---------------- -->
+    <!-- ---------------- FORGOT PASSWORD — step 2: confirm email + new password ---------------- -->
     <div class="card hidden" id="view-reset">
       <div class="eyebrow card-eyebrow">Student Portal</div>
       <h2 class="card-title">Reset your password</h2>
       <p class="card-sub" id="resetCopy">
-        We sent a 6-digit code to your registered email. Enter it below, then choose a new password.
+        Confirm the email registered to <strong id="resetEmailShown">this account</strong>, then choose a new password.
       </p>
 
       <div id="resetAlert"></div>
 
       <form id="resetForm">
-        <!-- Email mode: pili sa account nga naggamit ana nga email -->
-        <div class="field hidden" id="resetAccountField">
-          <label for="resetAccount">Select your account</label>
-          <select id="resetAccount" style="width:100%; padding:12px 14px; border:1.5px solid #000; border-radius:9px; background:#fff; font-family:var(--font-display); font-size:14.5px;"></select>
-        </div>
-
         <div class="field">
-          <label for="resetOtp">Verification code</label>
-          <input type="text" id="resetOtp" required inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+          <label for="resetCode">Email address</label>
+          <input type="email" id="resetCode" required autocomplete="email" placeholder="you@example.com">
         </div>
         <div class="field">
           <label for="resetPassword">New password</label>
@@ -245,7 +240,6 @@
         <button type="submit" class="btn btn-primary" id="resetSubmit">Update password</button>
       </form>
 
-      <button class="btn btn-ghost" id="resetResend" style="margin-top:12px;">Resend code</button>
       <button class="btn btn-ghost" id="backToLoginFromReset" style="margin-top:12px;">Back to login</button>
     </div>
 
@@ -253,7 +247,8 @@
 </div>
 
 <!-- ============================================================ -->
-<!-- STEP 2: STUDENT INFORMATION                                    -->
+<!-- STEP 2: STUDENT INFORMATION — standalone, no branding panel,   -->
+<!-- just the form. Shown right after email verification succeeds. -->
 <!-- ============================================================ -->
 <div class="step2-page hidden" id="step2Shell">
   <div class="step2-card">
@@ -349,7 +344,7 @@
 
 
 <!-- ============================================================ -->
-<!-- DASHBOARD                                                      -->
+<!-- DASHBOARD (unlocked only after email verification)             -->
 <!-- ============================================================ -->
 <div class="dash" id="dashboard">
   <div class="dash-shell">
@@ -370,7 +365,6 @@
         <button class="tab" data-tab="tab-images">Uploaded Images</button>
         <button class="tab" data-tab="tab-notice">Notice</button>
         <button class="tab" data-tab="tab-appointments">Appointments</button>
-        <button class="tab" data-tab="tab-password">Change Password</button>
         <button class="tab signout-menu" id="signOutBtn">Sign out</button>
       </div>
     </aside>
@@ -406,51 +400,18 @@
         </div>
 
          <div class="db-columns">
+          <!-- <div class="stub-card">
+            <h3>Studio Team</h3>
+            <div class="db-team-row" id="dbTeamRow"></div>
+          </div> -->
           <div class="stub-card">
-            <div class="stub-card-header">
+            <div class="stub-card-header"> 
               <h3>Daily Notice</h3>
               <button class="btn-ghost btn-inline" data-goto-tab="tab-notice">See all</button>
             </div>
             <div id="dbNoticeList"><div class="stub-empty">Loading…</div></div>
           </div>
-        </div>
-      </div>
-
-      <!-- CHANGE PASSWORD (email OTP) -->
-      <div class="tab-panel" id="tab-password">
-        <div class="stub-card" style="max-width:520px;">
-          <div class="stub-card-header"><div><h3>Change password</h3></div></div>
-          <p>Mag-send kami ug 6-digit code sa imong registered email aron ma-confirm nga ikaw gyud ni.</p>
-          <div id="changePwAlert"></div>
-          <form id="changePwForm">
-            <div class="field">
-              <label for="cpNew">New password</label>
-                  <div class="password-wrap">
-                <input type="password" id="cpNew" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
-                <button type="button" class="pw-toggle" data-target="cpNew" aria-label="Show password" aria-pressed="false">
-                  <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                  <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="cpConfirm">Confirm new password</label>
-                  <div class="password-wrap">
-                <input type="password" id="cpConfirm" required autocomplete="new-password" minlength="8" placeholder="Re-enter your new password">
-                <button type="button" class="pw-toggle" data-target="cpConfirm" aria-label="Show password" aria-pressed="false">
-                  <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                  <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="field hidden" id="cpCodeField">
-              <label for="cpCode">Verification code</label>
-              <input type="text" id="cpCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code">
-            </div>
-            <button type="submit" class="btn btn-primary btn-inline" id="changePwSubmit">Send verification code</button>
-            <button type="button" class="btn btn-ghost btn-inline hidden" id="cpResend">Resend code</button>
-          </form>
-        </div>
+        </div>  
       </div>
 
       <!-- PAYMENT INFO (under construction) -->
@@ -497,7 +458,7 @@
         </div>
       </div>
 
-      <!-- NOTICE -->
+      <!-- NOTICE (functional) -->
       <div class="tab-panel" id="tab-notice">
         <h3 class="db-section-title">All Notices</h3>
         <div id="noticeFullList"><div class="stub-empty">Loading…</div></div>
