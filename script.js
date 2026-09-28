@@ -544,10 +544,21 @@ document.getElementById('resendBtn').addEventListener('click', async () => {
   }
 });
 
-/* -------------------- FORGOT PASSWORD — step 1: username OR email -------------------- */
-let resetMode = 'username';   // 'username' | 'email'
-let resetUsername = '';
-let resetEmail = '';
+/* -------------------- FORGOT PASSWORD — step 1: username OR email → send OTP -------------------- */
+let resetMode = 'username';            // 'username' | 'email'
+let resetTarget = { email: '', usernames: [] };
+let resetResendAt = 0;
+
+function maskEmail(e){
+  const [u, d] = String(e || '').split('@');
+  if (!d) return 'your registered email';
+  return u.slice(0, 2) + '***@' + d;
+}
+
+async function sendEmailOtp(email){
+  const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  return error;
+}
 
 document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -558,120 +569,106 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
 
   const btn = document.getElementById('forgotSubmit');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Checking…';
+  btn.innerHTML = '<span class="spinner"></span>Sending code…';
 
   const isEmail = identifier.includes('@');
   let rows = [];
-
   if (isEmail) {
     const safeEmail = identifier.replace(/[\\%_]/g, '\\$&');
-    const { data } = await sb.from('Clients').select('Username, Email')
-      .ilike('Email', safeEmail).limit(50);
+    const { data } = await sb.from('Clients').select('Username, Email').ilike('Email', safeEmail).limit(50);
     rows = data || [];
   } else {
-    const { data } = await sb.from('Clients').select('Username, Email')
-      .eq('Username', identifier).limit(1);
+    const { data } = await sb.from('Clients').select('Username, Email').eq('Username', identifier).limit(1);
     rows = data || [];
   }
+
+  resetMode = isEmail ? 'email' : 'username';
+  resetTarget = { email: '', usernames: [] };
+  if (rows.length) {
+    resetTarget.email = rows[0]['Email'];
+    resetTarget.usernames = isEmail ? rows.map(r => r['Username']) : [rows[0]['Username']];
+  }
+
+  let sendErr = null;
+  if (resetTarget.email) sendErr = await sendEmailOtp(resetTarget.email);
 
   btn.disabled = false;
   btn.textContent = 'Continue';
 
-  const emailField = document.getElementById('resetEmailField');
+  if (sendErr) { alertBox('forgotAlert', sendErr.message, 'error'); return; }
+  resetResendAt = Date.now();
+
   const acctField = document.getElementById('resetAccountField');
   const acctSelect = document.getElementById('resetAccount');
-  const copy = document.getElementById('resetCopy');
-
   clearAlert('resetAlert');
-  document.getElementById('resetPassword').value = '';
-  document.getElementById('resetPasswordConfirm').value = '';
+  ['resetOtp', 'resetPassword', 'resetPasswordConfirm'].forEach(id => document.getElementById(id).value = '');
 
   if (isEmail) {
-    resetMode = 'email';
-    resetEmail = identifier;
-    resetUsername = '';
-    emailField.classList.add('hidden');
     acctField.classList.remove('hidden');
-    acctSelect.innerHTML = rows.map(r =>
-      `<option value="${escapeHtml(r['Username'])}">${escapeHtml(r['Username'])}</option>`
-    ).join('');
-    copy.innerHTML = `Choose the account registered to <strong>${escapeHtml(identifier)}</strong>, then set a new password.`;
+    acctSelect.innerHTML = resetTarget.usernames.map(u =>
+      `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
   } else {
-    resetMode = 'username';
-    resetUsername = identifier;
-    resetEmail = '';
     acctField.classList.add('hidden');
-    emailField.classList.remove('hidden');
-    document.getElementById('resetCode').value = '';
-    copy.innerHTML = `Confirm the email registered to <strong>${escapeHtml(identifier)}</strong>, then choose a new password.`;
+    acctSelect.innerHTML = '';
   }
+
+  // Parehas nga message bisan wala nakit-an ang account — dili ma-reveal kung naa ba.
+  const shown = resetTarget.email ? maskEmail(resetTarget.email) : (isEmail ? maskEmail(identifier) : 'the email registered to this account');
+  document.getElementById('resetCopy').innerHTML =
+    `If the account exists, we sent a 6-digit code to <strong>${escapeHtml(shown)}</strong>. Enter it below, then choose a new password.`;
 
   showView('reset');
 });
 
-/* -------------------- FORGOT PASSWORD — step 2: set new password -------------------- */
+document.getElementById('resetResend').addEventListener('click', async () => {
+  clearAlert('resetAlert');
+  if (!resetTarget.email) { alertBox('resetAlert', 'Code resent. Check your inbox.', 'success'); return; }
+  if (Date.now() - resetResendAt < 30000) {
+    alertBox('resetAlert', 'Please wait a few seconds before requesting another code.', 'error');
+    return;
+  }
+  const btn = document.getElementById('resetResend');
+  btn.disabled = true;
+  const err = await sendEmailOtp(resetTarget.email);
+  btn.disabled = false;
+  if (err) { alertBox('resetAlert', err.message, 'error'); return; }
+  resetResendAt = Date.now();
+  alertBox('resetAlert', 'Code resent. Check your inbox.', 'success');
+});
+
+/* -------------------- FORGOT PASSWORD — step 2: verify OTP + set new password -------------------- */
 document.getElementById('resetForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('resetAlert');
 
   const username = resetMode === 'email'
     ? document.getElementById('resetAccount').value
-    : resetUsername;
-  const confirmEmail = resetMode === 'email'
-    ? resetEmail
-    : document.getElementById('resetCode').value.trim();
+    : (resetTarget.usernames[0] || '');
+  const code = document.getElementById('resetOtp').value.trim();
   const password = document.getElementById('resetPassword').value;
   const confirm = document.getElementById('resetPasswordConfirm').value;
 
-  if (!username) {
-    alertBox('resetAlert', 'No account found for that email.', 'error');
-    return;
-  }
-  if (!confirmEmail) {
-    alertBox('resetAlert', 'Please enter your email address.', 'error');
-    return;
-  }
-  if (password !== confirm) {
-    alertBox('resetAlert', 'Passwords do not match.', 'error');
-    return;
-  }
-  if (password.length < 8) {
-    alertBox('resetAlert', 'Password must be at least 8 characters.', 'error');
-    return;
-  }
+  if (password !== confirm) { alertBox('resetAlert', 'Passwords do not match.', 'error'); return; }
+  if (password.length < 8) { alertBox('resetAlert', 'Password must be at least 8 characters.', 'error'); return; }
+  if (!resetTarget.email || !username) { alertBox('resetAlert', 'Invalid or expired code.', 'error'); return; }
 
   const btn = document.getElementById('resetSubmit');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Updating…';
 
-  const safeEmail = confirmEmail.replace(/[\\%_]/g, '\\$&');
-  const { data, error: lookupError } = await sb
-    .from('Clients')
-    .select('Username, Email')
-    .eq('Username', username)
-    .ilike('Email', safeEmail)
-    .limit(1);
-
-  const row = data && data[0];
-  if (lookupError || !row) {
-    btn.disabled = false;
-    btn.textContent = 'Update password';
-    alertBox('resetAlert', 'That username and email don\'t match our records.', 'error');
+  const { error: otpError } = await sb.auth.verifyOtp({ email: resetTarget.email, token: code, type: 'email' });
+  if (otpError) {
+    btn.disabled = false; btn.textContent = 'Update password';
+    alertBox('resetAlert', 'Invalid or expired code.', 'error');
     return;
   }
 
-  const { error: updateError } = await sb
-    .from('Clients')
-    .update({ 'Password': password })
-    .eq('Username', username);
+  // Server-side check: ang password mausab ra kung ang verified email = email sa Clients row.
+  const { error: rpcError } = await sb.rpc('set_password_after_otp', { p_username: username, p_new_password: password });
+  await sb.auth.signOut();
 
-  btn.disabled = false;
-  btn.textContent = 'Update password';
-
-  if (updateError) {
-    alertBox('resetAlert', updateError.message, 'error');
-    return;
-  }
+  btn.disabled = false; btn.textContent = 'Update password';
+  if (rpcError) { alertBox('resetAlert', rpcError.message, 'error'); return; }
 
   showView('login');
   alertBox('loginAlert', 'Password updated. Log in with your new password.', 'success');
@@ -1289,6 +1286,91 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   profileEditMode = false;
   renderProfileGrid();
   alertBox('profileAlert', 'Details updated.', 'success');
+});
+
+/* -------------------- CHANGE PASSWORD (logged-in student, email OTP) -------------------- */
+let cpCodeSent = false;
+let cpResendAt = 0;
+
+function cpEmail(){
+  return (currentProfile && currentProfile['Email']) || (currentUser && currentUser.email) || '';
+}
+
+function cpReset(){
+  cpCodeSent = false;
+  document.getElementById('changePwForm').reset();
+  document.getElementById('cpCodeField').classList.add('hidden');
+  document.getElementById('cpResend').classList.add('hidden');
+  document.getElementById('changePwSubmit').textContent = 'Send verification code';
+}
+
+document.getElementById('changePwForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearAlert('changePwAlert');
+  if (!currentProfile || !currentProfile['Username']) return;
+
+  const next = document.getElementById('cpNew').value;
+  const confirm = document.getElementById('cpConfirm').value;
+  const email = cpEmail();
+  const btn = document.getElementById('changePwSubmit');
+
+  if (next.length < 8) { alertBox('changePwAlert', 'New password must be at least 8 characters.', 'error'); return; }
+  if (next !== confirm) { alertBox('changePwAlert', 'New passwords do not match.', 'error'); return; }
+  if (!email) { alertBox('changePwAlert', 'No email on file for this account.', 'error'); return; }
+
+  // Stage 1: send the code
+  if (!cpCodeSent) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Sending code…';
+    const err = await sendEmailOtp(email);
+    btn.disabled = false;
+    if (err) { btn.textContent = 'Send verification code'; alertBox('changePwAlert', err.message, 'error'); return; }
+    cpCodeSent = true;
+    cpResendAt = Date.now();
+    document.getElementById('cpCodeField').classList.remove('hidden');
+    document.getElementById('cpResend').classList.remove('hidden');
+    btn.textContent = 'Verify & update password';
+    alertBox('changePwAlert', `We sent a 6-digit code to ${escapeHtml(maskEmail(email))}. Enter it below.`, 'success');
+    document.getElementById('cpCode').focus();
+    return;
+  }
+
+  // Stage 2: verify the code, then update
+  const code = document.getElementById('cpCode').value.trim();
+  if (!code) { alertBox('changePwAlert', 'Please enter the verification code.', 'error'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Updating…';
+
+  const { error: otpError } = await sb.auth.verifyOtp({ email, token: code, type: 'email' });
+  if (otpError) {
+    btn.disabled = false; btn.textContent = 'Verify & update password';
+    alertBox('changePwAlert', 'Invalid or expired code.', 'error');
+    return;
+  }
+
+  const { error: rpcError } = await sb.rpc('set_password_after_otp', {
+    p_username: currentProfile['Username'], p_new_password: next
+  });
+  await sb.auth.signOut();
+
+  btn.disabled = false;
+  if (rpcError) { btn.textContent = 'Verify & update password'; alertBox('changePwAlert', rpcError.message, 'error'); return; }
+
+  cpReset();
+  alertBox('changePwAlert', 'Password updated.', 'success');
+});
+
+document.getElementById('cpResend').addEventListener('click', async () => {
+  clearAlert('changePwAlert');
+  if (Date.now() - cpResendAt < 30000) {
+    alertBox('changePwAlert', 'Please wait a few seconds before requesting another code.', 'error');
+    return;
+  }
+  const err = await sendEmailOtp(cpEmail());
+  if (err) { alertBox('changePwAlert', err.message, 'error'); return; }
+  cpResendAt = Date.now();
+  alertBox('changePwAlert', 'Code resent. Check your inbox.', 'success');
 });
 
 /* -------------------- STEP 2 — student info registration -------------------- */
