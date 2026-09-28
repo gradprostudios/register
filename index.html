@@ -201,29 +201,27 @@
       <button class="btn btn-ghost" id="backToLoginFromForgot" style="margin-top:12px;">Back to login</button>
     </div>
 
-    <!-- ---------------- FORGOT PASSWORD — step 2 ---------------- -->
+    <!-- ---------------- FORGOT PASSWORD — step 2 (OTP + new password) ---------------- -->
     <div class="card hidden" id="view-reset">
       <div class="eyebrow card-eyebrow">Student Portal</div>
       <h2 class="card-title">Reset your password</h2>
       <p class="card-sub" id="resetCopy">
-        Confirm the email registered to <strong id="resetEmailShown">this account</strong>, then choose a new password.
+        We sent a 6-digit code to your registered email. Enter it below, then choose a new password.
       </p>
 
       <div id="resetAlert"></div>
 
       <form id="resetForm">
-        <!-- Username mode: i-type ang email -->
-        <div class="field" id="resetEmailField">
-          <label for="resetCode">Email address</label>
-          <input type="email" id="resetCode" autocomplete="email" placeholder="you@example.com">
-        </div>
-
         <!-- Email mode: pili sa account nga naggamit ana nga email -->
         <div class="field hidden" id="resetAccountField">
           <label for="resetAccount">Select your account</label>
           <select id="resetAccount" style="width:100%; padding:12px 14px; border:1.5px solid #000; border-radius:9px; background:#fff; font-family:var(--font-display); font-size:14.5px;"></select>
         </div>
 
+        <div class="field">
+          <label for="resetOtp">Verification code</label>
+          <input type="text" id="resetOtp" required inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+        </div>
         <div class="field">
           <label for="resetPassword">New password</label>
           <div class="password-wrap">
@@ -247,6 +245,7 @@
         <button type="submit" class="btn btn-primary" id="resetSubmit">Update password</button>
       </form>
 
+      <button class="btn btn-ghost" id="resetResend" style="margin-top:12px;">Resend code</button>
       <button class="btn btn-ghost" id="backToLoginFromReset" style="margin-top:12px;">Back to login</button>
     </div>
 
@@ -417,25 +416,16 @@
         </div>
       </div>
 
-      <!-- CHANGE PASSWORD -->
+      <!-- CHANGE PASSWORD (email OTP) -->
       <div class="tab-panel" id="tab-password">
         <div class="stub-card" style="max-width:520px;">
           <div class="stub-card-header"><div><h3>Change password</h3></div></div>
+          <p>Mag-send kami ug 6-digit code sa imong registered email aron ma-confirm nga ikaw gyud ni.</p>
           <div id="changePwAlert"></div>
           <form id="changePwForm">
             <div class="field">
-              <label for="cpCurrent">Current password</label>
-              <div class="password-wrap">
-                <input type="password" id="cpCurrent" required autocomplete="current-password" placeholder="••••••••">
-                <button type="button" class="pw-toggle" data-target="cpCurrent" aria-label="Show password" aria-pressed="false">
-                  <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-                  <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a20.9 20.9 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a20.9 20.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="field">
               <label for="cpNew">New password</label>
-              <div class="password-wrap">
+                  <div class="password-wrap">
                 <input type="password" id="cpNew" required autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
                 <button type="button" class="pw-toggle" data-target="cpNew" aria-label="Show password" aria-pressed="false">
                   <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -445,7 +435,7 @@
             </div>
             <div class="field">
               <label for="cpConfirm">Confirm new password</label>
-              <div class="password-wrap">
+                  <div class="password-wrap">
                 <input type="password" id="cpConfirm" required autocomplete="new-password" minlength="8" placeholder="Re-enter your new password">
                 <button type="button" class="pw-toggle" data-target="cpConfirm" aria-label="Show password" aria-pressed="false">
                   <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -453,9 +443,13 @@
                 </button>
               </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-inline" id="changePwSubmit">Update password</button>
+            <div class="field hidden" id="cpCodeField">
+              <label for="cpCode">Verification code</label>
+              <input type="text" id="cpCode" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code">
+            </div>
+            <button type="submit" class="btn btn-primary btn-inline" id="changePwSubmit">Send verification code</button>
+            <button type="button" class="btn btn-ghost btn-inline hidden" id="cpResend">Resend code</button>
           </form>
-          <p class="social-note">Don't know your current password (for example, if you signed up using Google/Facebook)? <a href="#" class="link" id="forgotCurrentPw">Reset it here</a>.</p>
         </div>
       </div>
 
