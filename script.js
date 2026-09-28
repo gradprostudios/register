@@ -411,15 +411,33 @@ function socialErr(error){
   return m || 'Something went wrong. Please try again.';
 }
 
-function wireLoginSocial(btnId, provider){
+const REGISTER_ORIGIN = 'https://register.gradprostudios.com';
+
+function wireLoginSocial(btnId, provider, alertId){
   document.getElementById(btnId).addEventListener('click', async () => {
-    clearAlert('loginAlert');
+    clearAlert(alertId);
+
+    // Naa pa sa lain nga domain → adto sa register site, didto i-start ang OAuth
+    if (location.origin !== REGISTER_ORIGIN) {
+      location.href = `${REGISTER_ORIGIN}/?oauth=${provider}`;
+      return;
+    }
+
     const { error } = await startOAuth({ mode: 'login', provider });
-    if (error) { sessionStorage.removeItem(OAUTH_KEY); alertBox('loginAlert', error.message, 'error'); }
+    if (error) { sessionStorage.removeItem(OAUTH_KEY); alertBox(alertId, error.message, 'error'); }
   });
 }
-wireLoginSocial('loginGoogle', 'google');
-wireLoginSocial('loginFacebook', 'facebook');
+
+wireLoginSocial('loginGoogle', 'google', 'loginAlert');
+wireLoginSocial('loginFacebook', 'facebook', 'loginAlert');
+wireLoginSocial('regGoogle', 'google', 'registerAlert');
+wireLoginSocial('regFacebook', 'facebook', 'registerAlert');
+
+function socialAuthErr(error, label){
+  const m = (error && error.message) || '';
+  if (/no email/i.test(m)) return `This ${label} account doesn't share an email address, so we can't create your account. Please sign up with your email instead.`;
+  return m || 'Something went wrong. Please try again.';
+}
 
 async function renderSocialList(){
   const box = document.getElementById('socialList');
@@ -481,20 +499,25 @@ async function handleOAuthReturn(st){
     return;
   }
 
-  // mode === 'login'
-  const { data: linkedUsername } = await sb.rpc('social_login', { p_provider: st.provider });
+  // mode === 'login': log in if this Google/Facebook account is already
+  // connected to a student account; otherwise register a brand-new one
+  // (Username auto-generated from the email, random password, no OTP since
+  // Google/Facebook already verified the email) and go straight to Step 2.
+  const { data: reg, error: regError } = await sb.rpc('social_register', { p_provider: st.provider });
   await sb.auth.signOut();
-  if (!linkedUsername) {
+  const info = Array.isArray(reg) ? reg[0] : reg;
+  if (regError || !info || !info.username) {
     showView('login');
-    alertBox('loginAlert', `No account is connected to this ${label} account yet. Log in with your username first, then connect ${label} from your dashboard.`, 'error');
+    alertBox('loginAlert', socialAuthErr(regError, label), 'error');
     return;
   }
-  const { data: rows } = await sb.from('Clients').select('*').eq('Username', linkedUsername).limit(1);
+  const { data: rows } = await sb.from('Clients').select('*').eq('Username', info.username).limit(1);
   const row = rows && rows[0];
   if (!row) { showView('login'); alertBox('loginAlert', 'Account not found.', 'error'); return; }
   if (isPendingRegistration(row)) {
     pendingUser = { username: row['Username'], email: row['Email'] };
     await showStep2();
+    if (info.is_new) alertBox('step2Alert', `Signed in with ${label}. Please complete your details to finish registering.`, 'success');
   } else {
     setSession(row['Username']);
     await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
@@ -1492,7 +1515,21 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
     if (st) { await handleOAuthReturn(st); return; }
   }
 
+  // Gikan sa lain nga page: auto-start Google/Facebook
+  const autoProvider = new URLSearchParams(window.location.search).get('oauth');
+  if (autoProvider && SOCIAL_PROVIDERS[autoProvider] && !getSession()) {
+    history.replaceState(null, '', window.location.pathname);
+    const { error } = await startOAuth({ mode: 'login', provider: autoProvider });
+    if (error) {
+      sessionStorage.removeItem(OAUTH_KEY);
+      showView('login');
+      alertBox('loginAlert', error.message, 'error');
+    }
+    return;
+  }
+
   const username = getSession();
+  // ... ang nahibiling code sa init, ayaw usba 
 
   if (username) {
     const { data: rows } = await sb.from('Clients').select('*').eq('Username', username).limit(1);
