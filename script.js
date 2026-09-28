@@ -1,4 +1,3 @@
-
 const SUPABASE_URL = "https://rkxuwluybpynxvguhqpn.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_uBCFBzLjcvRSK5ZcIevXZw_GzhneWhJ";
 
@@ -335,11 +334,15 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
 });
 
 /* -------------------- LOGIN -------------------- */
+// Accepts either a Username or an Email in the same field.
+// Emails can be shared by several students (each with their own password),
+// so for an email we fetch every matching row and pick the one whose
+// password matches.
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('loginAlert');
 
-  const username = document.getElementById('loginEmail').value.trim();
+  const identifier = document.getElementById('loginEmail').value.trim();
   const password = document.getElementById('loginPassword').value;
 
   const captchaToken = getTurnstileToken('login');
@@ -352,22 +355,25 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Logging in…';
 
-  // Plain Username/Password check against Clients — same pattern
-  // UserPassCache.vb uses for the desktop app. NOT Supabase Auth: since
-  // students can share one borrowed email with different passwords each,
-  // Auth's one-password-per-email model can't tell them apart. Auth is
-  // only used at registration time to prove a NEW email is real.
-  const { data: rows, error } = await sb
-    .from('Clients').select('*').eq('Username', username).limit(1);
+  const looksLikeEmail = identifier.includes('@');
+  let query = sb.from('Clients').select('*');
+  if (looksLikeEmail) {
+    // Case-insensitive match; escape ilike wildcards (% _ \) so they match literally.
+    const safeEmail = identifier.replace(/[\\%_]/g, '\\$&');
+    query = query.ilike('Email', safeEmail).limit(50);
+  } else {
+    query = query.eq('Username', identifier).limit(1);
+  }
+  const { data: rows, error } = await query;
 
   resetTurnstile('login');
   btn.disabled = false;
   btn.textContent = 'Log in';
 
-  const row = rows && rows[0];
-  // Same generic message either way — doesn't reveal whether the username exists.
-  if (error || !row || row['Password'] !== password) {
-    alertBox('loginAlert', 'Invalid username or password.', 'error');
+  // Same generic message either way — doesn't reveal whether the account exists.
+  const row = !error && rows ? rows.find(r => r['Password'] === password) : null;
+  if (!row) {
+    alertBox('loginAlert', 'Invalid username/email or password.', 'error');
     return;
   }
 
@@ -375,10 +381,125 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     pendingUser = { username: row['Username'], email: row['Email'] };
     await showStep2();
   } else {
-    setSession(username);
+    // Use the real Username from the row (not what was typed) — the session
+    // and dashboard both key off Username, and the user may have typed an email.
+    setSession(row['Username']);
     await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
   }
 });
+
+/* -------------------- SOCIAL LOGIN / CONNECT (Google, Facebook) -------------------- */
+// Login stays Clients-based. Google/Facebook only prove "who you are" through a
+// temporary Supabase Auth session; a server-side link (social_links) maps that
+// identity to ONE Clients Username. The Auth session is signed out right after use.
+const OAUTH_KEY = 'gps_oauth';
+const SOCIAL_PROVIDERS = { google: 'Google', facebook: 'Facebook' };
+
+function startOAuth(state){
+  sessionStorage.setItem(OAUTH_KEY, JSON.stringify(state));
+  return sb.auth.signInWithOAuth({
+    provider: state.provider,
+    options: { redirectTo: window.location.origin + window.location.pathname }
+  });
+}
+
+function socialErr(error){
+  const m = (error && error.message) || '';
+  if (/invalid credentials/i.test(m)) return 'Incorrect password.';
+  if (/already linked/i.test(m)) return 'That account is already connected to a different student account.';
+  if (/link expired/i.test(m)) return 'The connection request expired. Please try again.';
+  return m || 'Something went wrong. Please try again.';
+}
+
+function wireLoginSocial(btnId, provider){
+  document.getElementById(btnId).addEventListener('click', async () => {
+    clearAlert('loginAlert');
+    const { error } = await startOAuth({ mode: 'login', provider });
+    if (error) { sessionStorage.removeItem(OAUTH_KEY); alertBox('loginAlert', error.message, 'error'); }
+  });
+}
+wireLoginSocial('loginGoogle', 'google');
+wireLoginSocial('loginFacebook', 'facebook');
+
+async function renderSocialList(){
+  const box = document.getElementById('socialList');
+  if (!box || !currentUser) return;
+  const { data } = await sb.rpc('list_social_links', { p_username: currentUser.username });
+  const linked = data || [];
+  box.innerHTML = Object.entries(SOCIAL_PROVIDERS).map(([key, label]) => {
+    const on = linked.includes(key);
+    return `<div class="social-conn"><span>${label} — ${on ? 'Connected' : 'Not connected'}</span><button type="button" class="btn-ghost btn-inline" data-social="${key}" data-on="${on}">${on ? 'Disconnect' : 'Connect'}</button></div>`;
+  }).join('');
+}
+
+document.getElementById('socialList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-social]');
+  if (!btn) return;
+  clearAlert('socialAlert');
+  const provider = btn.dataset.social;
+  const label = SOCIAL_PROVIDERS[provider];
+  const pw = document.getElementById('socialPw').value;
+  if (!pw) { alertBox('socialAlert', 'Enter your password first to confirm.', 'error'); return; }
+
+  if (btn.dataset.on === 'true') {
+    const { error } = await sb.rpc('unlink_social', { p_username: currentUser.username, p_password: pw, p_provider: provider });
+    if (error) { alertBox('socialAlert', socialErr(error), 'error'); return; }
+    document.getElementById('socialPw').value = '';
+    alertBox('socialAlert', `${label} disconnected.`, 'success');
+    renderSocialList();
+    return;
+  }
+
+  const { data: token, error } = await sb.rpc('create_link_token', { p_username: currentUser.username, p_password: pw });
+  if (error) { alertBox('socialAlert', socialErr(error), 'error'); return; }
+  document.getElementById('socialPw').value = '';
+  const res = await startOAuth({ mode: 'link', provider, token });
+  if (res.error) { sessionStorage.removeItem(OAUTH_KEY); alertBox('socialAlert', res.error.message, 'error'); }
+});
+
+// Runs once after Google/Facebook redirects back to this page.
+async function handleOAuthReturn(st){
+  history.replaceState(null, '', window.location.pathname);
+  const label = SOCIAL_PROVIDERS[st.provider] || st.provider;
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    showView('login');
+    alertBox('loginAlert', 'Sign-in was cancelled or failed. Please try again.', 'error');
+    return;
+  }
+
+  if (st.mode === 'link') {
+    const { error } = await sb.rpc('link_social', { p_token: st.token, p_provider: st.provider });
+    await sb.auth.signOut();
+    const username = getSession();
+    if (!username) { showView('login'); return; }
+    const { data: rows } = await sb.from('Clients').select('*').eq('Username', username).limit(1);
+    const row = rows && rows[0];
+    if (!row) { clearSession(); showView('login'); return; }
+    await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
+    alertBox('socialAlert', error ? socialErr(error) : `${label} connected.`, error ? 'error' : 'success');
+    return;
+  }
+
+  // mode === 'login'
+  const { data: linkedUsername } = await sb.rpc('social_login', { p_provider: st.provider });
+  await sb.auth.signOut();
+  if (!linkedUsername) {
+    showView('login');
+    alertBox('loginAlert', `No account is connected to this ${label} account yet. Log in with your username first, then connect ${label} from your dashboard.`, 'error');
+    return;
+  }
+  const { data: rows } = await sb.from('Clients').select('*').eq('Username', linkedUsername).limit(1);
+  const row = rows && rows[0];
+  if (!row) { showView('login'); alertBox('loginAlert', 'Account not found.', 'error'); return; }
+  if (isPendingRegistration(row)) {
+    pendingUser = { username: row['Username'], email: row['Email'] };
+    await showStep2();
+  } else {
+    setSession(row['Username']);
+    await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
+  }
+}
 
 /* -------------------- VERIFY OTP CODE (signup) -------------------- */
 document.getElementById('otpForm').addEventListener('submit', async (e) => {
@@ -838,6 +959,7 @@ async function loadDashboard(user, clientRow){
   initDashboardCarousel();
   renderNotices();
   renderAppointments();
+  renderSocialList();
 }
 
 /* -------------------- DASHBOARD: carousel of studio output photos -------------------- */
@@ -1362,6 +1484,14 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
 
 /* -------------------- BOOTSTRAP: check session on load -------------------- */
 (async function init(){
+  const oauthRaw = sessionStorage.getItem(OAUTH_KEY);
+  if (oauthRaw) {
+    sessionStorage.removeItem(OAUTH_KEY);
+    let st = null;
+    try { st = JSON.parse(oauthRaw); } catch (err) {}
+    if (st) { await handleOAuthReturn(st); return; }
+  }
+
   const username = getSession();
 
   if (username) {
@@ -1421,4 +1551,4 @@ document.getElementById('cookieAcceptBtn').addEventListener('click', () => {
   document.getElementById('cookieBanner').classList.add('hidden');
 });
 
-showCookieBannerIfNeeded(); 
+showCookieBannerIfNeeded();
