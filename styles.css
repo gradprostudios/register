@@ -370,14 +370,12 @@ input:focus-visible{outline:2px solid var(--maroon); outline-offset:1px;}
   border:none;
   background:transparent;
   box-shadow:none;
-  outline:none;
 }
 .tabs .signout-menu:hover,
 .tabs .signout-menu:focus{
   color:var(--maroon);
   border:none;
   background:rgba(178,34,34,0.06);
-  outline:none;
 }
 
 .dash-main{flex:1; padding:36px 44px 60px; max-width:1500px; margin:0 auto;}
@@ -737,3 +735,12 @@ input:focus-visible{outline:2px solid var(--maroon); outline-offset:1px;}
 .profile-field .suggest-list{
   border-radius:6px;
 }
+
+/* ---------- Social login / connected accounts ---------- */
+.social-divider{display:flex;align-items:center;gap:12px;margin:18px 0 14px;color:var(--text-muted);font-size:12px;}
+.social-divider::before,.social-divider::after{content:"";flex:1;height:1px;background:rgba(0,0,0,.15);}
+.social-row{display:grid;gap:10px;}
+.btn-social{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border:1px solid rgba(0,0,0,.2);border-radius:10px;background:#fff;color:var(--text-dark);font:600 14px var(--font-display);cursor:pointer;}
+.btn-social:hover{background:rgba(0,0,0,.04);}
+.btn-social svg{width:18px;height:18px;}
+.social-conn{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid rgba(0,0,0,.1);}
