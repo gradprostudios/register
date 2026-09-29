@@ -598,7 +598,21 @@ document.getElementById('resendBtn').addEventListener('click', async () => {
   }
 });
 
-/* -------------------- FORGOT PASSWORD — step 1: request a reset code -------------------- */
+/* -------------------- FORGOT PASSWORD (OTP) — step 1: look up account + send code --------------------
+   Username identifies the student (emails can be shared). The 6-digit code
+   goes to the email saved on that Clients row. Same result screen whether
+   or not the username exists, so it doesn't reveal which usernames exist. */
+let gpsReset = { username: '', email: null };
+
+function maskEmail(email){
+  const parts = email.split('@');
+  const u = parts[0];
+  return (u.length <= 2 ? u[0] : u.slice(0, 2)) + '***@' + parts[1];
+}
+function sendOtp(email){
+  return sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+}
+
 document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('forgotAlert');
@@ -606,37 +620,47 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   const username = document.getElementById('forgotEmail').value.trim();
   const btn = document.getElementById('forgotSubmit');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Checking…';
+  btn.innerHTML = '<span class="spinner"></span>Sending code…';
 
-  const { data, error } = await sb
-    .from('Clients').select('Username, Email').eq('Username', username).limit(1);
-
-  btn.disabled = false;
-  btn.textContent = 'Continue';
-
+  const { data } = await sb.from('Clients').select('Username, Email').eq('Username', username).limit(1);
   const row = data && data[0];
-  if (error || !row) {
-    // Same message either way — doesn't reveal which usernames exist.
-    alertBox('forgotAlert', 'If that username exists, you can reset its password on the next screen.', 'success');
+  gpsReset = { username, email: null };
+
+  if (row && row.Email) {
+    const { error } = await sendOtp(row.Email);
+    if (error) {
+      btn.disabled = false;
+      btn.textContent = 'Send code';
+      alertBox('forgotAlert', error.message, 'error');
+      return;
+    }
+    gpsReset = { username: row.Username, email: row.Email };
   }
 
-  document.getElementById('resetEmailShown').textContent = username;
+  btn.disabled = false;
+  btn.textContent = 'Send code';
+
+  document.getElementById('resetCopy').innerHTML =
+    'If <strong id="resetEmailShown">' + escapeHtml(username) + '</strong> exists, we sent a 6-digit code to its registered email' +
+    (gpsReset.email ? ' (' + escapeHtml(maskEmail(gpsReset.email)) + ')' : '') +
+    '. Enter it below and choose a new password.';
+  document.getElementById('resetOtpCode').value = '';
   showView('reset');
 });
 
-/* -------------------- FORGOT PASSWORD — step 2: confirm Email + set new password --------------------
-   Username + Email together (not Auth OTP) — since a borrowed/shared
-   email can belong to several different Usernames, only Username
-   uniquely identifies which student's password is being reset. */
+/* -------------------- FORGOT PASSWORD (OTP) — step 2: verify code + set new password -------------------- */
 document.getElementById('resetForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('resetAlert');
 
-  const username = document.getElementById('resetEmailShown').textContent;
-  const confirmEmail = document.getElementById('resetCode').value.trim();
+  const token = document.getElementById('resetOtpCode').value.trim();
   const password = document.getElementById('resetPassword').value;
   const confirm = document.getElementById('resetPasswordConfirm').value;
 
+  if (!/^\d{6}$/.test(token)) {
+    alertBox('resetAlert', 'Enter the 6-digit verification code.', 'error');
+    return;
+  }
   if (password !== confirm) {
     alertBox('resetAlert', 'Passwords do not match.', 'error');
     return;
@@ -645,30 +669,28 @@ document.getElementById('resetForm').addEventListener('submit', async (e) => {
     alertBox('resetAlert', 'Password must be at least 8 characters.', 'error');
     return;
   }
+  if (!gpsReset.email) {
+    alertBox('resetAlert', 'Invalid or expired code.', 'error');
+    return;
+  }
 
   const btn = document.getElementById('resetSubmit');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Updating…';
 
-  const { data, error: lookupError } = await sb
-    .from('Clients')
-    .select('Username, Email')
-    .eq('Username', username)
-    .eq('Email', confirmEmail)
-    .limit(1);
-
-  const row = data && data[0];
-  if (lookupError || !row) {
+  const { error: otpError } = await sb.auth.verifyOtp({ email: gpsReset.email, token, type: 'email' });
+  if (otpError) {
     btn.disabled = false;
     btn.textContent = 'Update password';
-    alertBox('resetAlert', 'That username and email don\'t match our records.', 'error');
+    alertBox('resetAlert', 'Invalid or expired code.', 'error');
     return;
   }
+  await sb.auth.signOut(); // the OTP session is only proof of inbox access
 
   const { error: updateError } = await sb
     .from('Clients')
     .update({ 'Password': password })
-    .eq('Username', username);
+    .eq('Username', gpsReset.username);
 
   btn.disabled = false;
   btn.textContent = 'Update password';
@@ -678,8 +700,95 @@ document.getElementById('resetForm').addEventListener('submit', async (e) => {
     return;
   }
 
+  gpsReset = { username: '', email: null };
+  document.getElementById('resetForm').reset();
   showView('login');
   alertBox('loginAlert', 'Password updated. Log in with your new password.', 'success');
+});
+
+document.getElementById('resetResendBtn').addEventListener('click', async () => {
+  clearAlert('resetAlert');
+  if (!gpsReset.email) {
+    alertBox('resetAlert', 'Verification code resent. Check your inbox.', 'success');
+    return;
+  }
+  const btn = document.getElementById('resetResendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  const { error } = await sendOtp(gpsReset.email);
+  btn.disabled = false;
+  btn.textContent = 'Resend verification code';
+  if (error) alertBox('resetAlert', error.message, 'error');
+  else alertBox('resetAlert', 'Verification code resent. Check your inbox.', 'success');
+});
+
+/* -------------------- CHANGE PASSWORD (dashboard, OTP) -------------------- */
+function cpEmail(){
+  return (currentProfile && currentProfile['Email']) || (currentUser && currentUser.email) || '';
+}
+function cpReset(){
+  ['cpOtp','cpNew','cpConfirm'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('cpStep2').classList.add('hidden');
+  document.getElementById('cpStep1').classList.remove('hidden');
+}
+async function cpSendCode(btn, idleText){
+  clearAlert('cpAlert');
+  const email = cpEmail();
+  if (!email) { alertBox('cpAlert', 'No email found on this account.', 'error'); return false; }
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  const { error } = await sendOtp(email);
+  btn.disabled = false;
+  btn.textContent = idleText;
+  if (error) { alertBox('cpAlert', error.message, 'error'); return false; }
+  alertBox('cpAlert', 'Verification code sent to ' + escapeHtml(maskEmail(email)) + '.', 'success');
+  return true;
+}
+
+document.getElementById('cpSendBtn').addEventListener('click', async (e) => {
+  if (await cpSendCode(e.currentTarget, 'Send verification code')) {
+    document.getElementById('cpStep1').classList.add('hidden');
+    document.getElementById('cpStep2').classList.remove('hidden');
+  }
+});
+document.getElementById('cpResendBtn').addEventListener('click', (e) => cpSendCode(e.currentTarget, 'Resend code'));
+document.getElementById('cpCancelBtn').addEventListener('click', () => { clearAlert('cpAlert'); cpReset(); });
+
+document.getElementById('cpSaveBtn').addEventListener('click', async () => {
+  clearAlert('cpAlert');
+  const token = document.getElementById('cpOtp').value.trim();
+  const password = document.getElementById('cpNew').value;
+  const confirm = document.getElementById('cpConfirm').value;
+
+  if (!/^\d{6}$/.test(token)) { alertBox('cpAlert', 'Enter the 6-digit verification code.', 'error'); return; }
+  if (password.length < 8) { alertBox('cpAlert', 'Password must be at least 8 characters.', 'error'); return; }
+  if (password !== confirm) { alertBox('cpAlert', 'Passwords do not match.', 'error'); return; }
+
+  const btn = document.getElementById('cpSaveBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Updating…';
+
+  const { error: otpError } = await sb.auth.verifyOtp({ email: cpEmail(), token, type: 'email' });
+  if (otpError) {
+    btn.disabled = false;
+    btn.textContent = 'Update password';
+    alertBox('cpAlert', 'Invalid or expired code.', 'error');
+    return;
+  }
+  await sb.auth.signOut();
+
+  const { error: updateError } = await sb
+    .from('Clients')
+    .update({ 'Password': password })
+    .eq('Username', currentProfile['Username']);
+
+  btn.disabled = false;
+  btn.textContent = 'Update password';
+
+  if (updateError) { alertBox('cpAlert', updateError.message, 'error'); return; }
+
+  cpReset();
+  alertBox('cpAlert', 'Password updated.', 'success');
 });
 
 /* -------------------- SIGN OUT -------------------- */
@@ -881,23 +990,48 @@ function escapeHtml(str){
 }
 
 // ================================================================
-//  Ports of TextHelpers.vb (SmartName / FormatSuffix) — same rules
-//  the desktop app applies, so a name typed here formats identically
-//  to one typed in Form1_StudentInfo.vb.
+//  Name capitalization (SmartName / FormatSuffix)
+//  2-letter-or-shorter words kept EXACTLY as typed (JC stays JC, Ia stays Ia);
+//  acronyms in the list stay uppercase; everything else keeps whatever
+//  capital letters the student typed (LeAnne stays LeAnne, McDonald stays
+//  McDonald) and only auto-capitalizes the first letter if it was lowercase.
+//  This way a student's name is never silently changed after they typed it
+//  correctly once — re-saving the same value won't flatten it to lowercase.
 // ================================================================
 const ACRONYMS = new Set([
   'SHS', 'BED', 'IBED', 'STEM', 'ABM', 'HUMSS', 'TVL', 'GAS', 'ICT',
   'CPU', 'RAM', 'USB', 'HTML', 'CSS', 'SQL', 'API', 'URL', 'PDF'
 ].map(a => a.toUpperCase()));
 
-// 2-letter-or-shorter words kept EXACTLY as typed (JC stays JC, Ia stays Ia);
-// 3+ letter words → title case; acronyms in the list stay uppercase.
+const NAME_PREFIXES = ['Mc', 'Mac', 'De', 'Di', 'Da', 'Del', 'Dela', 'Van', 'Von', 'La', 'Le', 'Al'];
+
+function capitalizeFirst(w){
+  if (!w) return w;
+  return w[0].toUpperCase() + w.slice(1);
+}
+
 function smartName(str){
   if (!str) return '';
   const parts = str.trim().split(/\s+/).filter(Boolean);
   return parts.map(w => {
     if (ACRONYMS.has(w.toUpperCase())) return w.toUpperCase();
     if (w.length <= 2) return w;
+
+    // Naa nay laktod nga internal capital (e.g. LeAnne, McDonald, DiCaprio)
+    // gikan mismo sa gi-type — respetohon kini, first letter ra i-fix.
+    const hasInternalCap = /[A-Z]/.test(w.slice(1));
+    if (hasInternalCap) return capitalizeFirst(w);
+
+    // Walay internal capital — i-check kung naay known prefix (Mc, Dela, ...)
+    // aron ang sunod nga letra human sa prefix ma-capitalize pud.
+    for (const prefix of NAME_PREFIXES) {
+      if (w.length > prefix.length && w.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase()) {
+        const rest = w.slice(prefix.length);
+        return capitalizeFirst(prefix) + capitalizeFirst(rest.toLowerCase());
+      }
+    }
+
+    // Normal nga pulong — title case.
     return w[0].toUpperCase() + w.slice(1).toLowerCase();
   }).join(' ');
 }
@@ -977,6 +1111,8 @@ async function loadDashboard(user, clientRow){
   renderNotices();
   renderAppointments();
   renderSocialList();
+  cpReset();
+  clearAlert('cpAlert');
 }
 
 /* -------------------- DASHBOARD: carousel of studio output photos -------------------- */
