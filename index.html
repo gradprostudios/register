@@ -185,8 +185,7 @@
       <div class="eyebrow card-eyebrow">Student Portal</div>
       <h2 class="card-title">Forgot password?</h2>
       <p class="card-sub">
-        Enter your username. On the next screen, confirm the email
-        registered to that account to set a new password.
+        Enter your username. We will send a 6-digit verification code to the email registered to that account.
       </p>
 
       <div id="forgotAlert"></div>
@@ -196,27 +195,24 @@
           <label for="forgotEmail">Username</label>
           <input type="text" id="forgotEmail" required autocomplete="username" placeholder="e.g. mariasantos">
         </div>
-        <button type="submit" class="btn btn-primary" id="forgotSubmit">Continue</button>
+        <button type="submit" class="btn btn-primary" id="forgotSubmit">Send code</button>
       </form>
 
       <button class="btn btn-ghost" id="backToLoginFromForgot" style="margin-top:12px;">Back to login</button>
     </div>
 
-    <!-- ---------------- FORGOT PASSWORD — step 2: confirm email + new password ---------------- -->
+    <!-- ---------------- FORGOT PASSWORD — step 2: OTP + new password ---------------- -->
     <div class="card hidden" id="view-reset">
       <div class="eyebrow card-eyebrow">Student Portal</div>
       <h2 class="card-title">Reset your password</h2>
       <p class="card-sub" id="resetCopy">
-        Confirm the email registered to <strong id="resetEmailShown">this account</strong>, then choose a new password.
+        Enter the 6-digit code sent to the email registered to <strong id="resetEmailShown">this account</strong>, then choose a new password.
       </p>
 
       <div id="resetAlert"></div>
 
       <form id="resetForm">
-        <div class="field">
-          <label for="resetCode">Email address</label>
-          <input type="email" id="resetCode" required autocomplete="email" placeholder="you@example.com">
-        </div>
+        <div class="field" id="resetOtpField"><label for="resetOtpCode">Verification code</label><input type="text" id="resetOtpCode" required inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code"></div>
         <div class="field">
           <label for="resetPassword">New password</label>
           <div class="password-wrap">
@@ -240,6 +236,7 @@
         <button type="submit" class="btn btn-primary" id="resetSubmit">Update password</button>
       </form>
 
+      <button type="button" class="btn btn-ghost" id="resetResendBtn" style="margin-top:12px;">Resend verification code</button>
       <button class="btn btn-ghost" id="backToLoginFromReset" style="margin-top:12px;">Back to login</button>
     </div>
 
@@ -447,6 +444,7 @@
         <div class="field"><label for="socialPw">Confirm your password to connect or disconnect</label><input type="password" id="socialPw" autocomplete="current-password" placeholder="••••••••"></div>
         <div id="socialList"></div>
       </div>
+      <div class="stub-card" style="margin-top:18px;"><div class="stub-card-header"><div><h3>Change password</h3></div></div><div id="cpAlert"></div><p>We will send a 6-digit verification code to your registered email before you can set a new password.</p><div id="cpStep1"><button type="button" class="btn btn-primary btn-inline" id="cpSendBtn">Send verification code</button></div><div id="cpStep2" class="hidden"><div class="field"><label for="cpOtp">Verification code</label><input type="text" id="cpOtp" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code"></div><div class="field"><label for="cpNew">New password</label><input type="password" id="cpNew" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div><div class="field"><label for="cpConfirm">Confirm new password</label><input type="password" id="cpConfirm" autocomplete="new-password" minlength="8" placeholder="Re-enter your new password"></div><div class="profile-edit-actions"><button type="button" class="btn btn-primary" id="cpSaveBtn">Update password</button><button type="button" class="btn btn-ghost" id="cpResendBtn">Resend code</button><button type="button" class="btn btn-ghost" id="cpCancelBtn">Cancel</button></div></div></div>
       </div>
 
       <!-- UPLOADED IMAGES (under construction) -->
