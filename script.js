@@ -32,10 +32,6 @@ function resetTurnstile(key){
 }
 
 /* -------------------- PASSWORD SHOW/HIDE TOGGLE -------------------- */
-// Generic handler: works for every .pw-toggle button on the page (login,
-// register, register-confirm, reset, reset-confirm). Each button carries
-// data-target pointing at the input id it controls, and holds two inline
-// SVGs (.icon-eye / .icon-eye-off) that we swap on click.
 document.querySelectorAll('.pw-toggle').forEach(btn => {
   btn.addEventListener('click', () => {
     const input = document.getElementById(btn.dataset.target);
@@ -50,13 +46,7 @@ document.querySelectorAll('.pw-toggle').forEach(btn => {
 });
 
 /* -------------------- view helpers -------------------- */
-// Holds the Supabase Auth user between "just verified OTP / just logged in"
-// and "Step 2 finished" — Step 2 needs it to know which Clients row (by
-// Email) to PATCH, and to hand off to loadDashboard() afterward.
 let pendingUser = null;
-
-// Registration details stashed between "OTP sent" and "OTP verified" —
-// the Clients row isn't created until the code is actually redeemed.
 let pendingRegistration = null;
 
 function isUsernameTakenInClients(username){
@@ -67,10 +57,6 @@ function isUsernameTakenInClients(username){
     });
 }
 
-// A Clients row created at registration doesn't have real student info yet
-// — "Full Name" (the primary key, NOT NULL) is stamped with this
-// placeholder until Step 2 finishes and overwrites it with the real
-// "Last, First MI." name.
 function pendingFullName(username){
   return 'PENDING::' + username;
 }
@@ -78,9 +64,6 @@ function isPendingRegistration(clientRow){
   return !clientRow || (clientRow['Full Name'] || '').indexOf('PENDING::') === 0;
 }
 
-// Login is Clients-based (Username/Password), not a Supabase Auth session —
-// required since multiple students can share one borrowed email with
-// different passwords. This is what "stays logged in" across a reload.
 const SESSION_KEY = 'gps_username';
 function setSession(username){ sessionStorage.setItem(SESSION_KEY, username); }
 function getSession(){ return sessionStorage.getItem(SESSION_KEY); }
@@ -101,8 +84,6 @@ const els = {
 };
 
 function showView(name){
-  // Step 2 is a standalone full-page view — no branding panel, no ribbon,
-  // just the form. Lives outside #authShell entirely (see index.html).
   if (name === 'step2') {
     els.authShell.classList.add('hidden');
     els.dashboard.style.display = 'none';
@@ -146,19 +127,7 @@ function clearAlert(containerId){
   document.getElementById(containerId).innerHTML = '';
 }
 
-/* -------------------- PACKAGE SELECTION FROM MAIN PAGE --------------------
-   The main page's package/frame buttons call selectPackage(name, price),
-   which redirects here with ?view=register&package=...&price=...
-   We stash it in sessionStorage so it survives the register -> verify-email
-   steps.
-
-   *** TODO / KNOWN GAP *** (unchanged from before)
-   savePendingPackageSelection() below is DISCONNECTED — it wrote to
-   package_selections/appointments keyed by student_profiles.id, which no
-   longer exists now that registration data lives in Clients (no numeric
-   id; "Email"/"Username" instead). Nothing calls it. Send me
-   package_selections'/appointments' schemas when you're ready and I'll
-   rewire this against Clients. */
+/* -------------------- PACKAGE SELECTION FROM MAIN PAGE -------------------- */
 (function capturePackageFromUrl(){
   const params = new URLSearchParams(window.location.search);
   const pkgName = params.get('package');
@@ -193,9 +162,6 @@ function showSelectedPackageBanner(){
 }
 showSelectedPackageBanner();
 
-// Called once we know the student's package_selections id (i.e. once
-// there's a confirmed student_profiles row). If there's nothing pending
-// in sessionStorage, this is a no-op.
 async function savePendingPackageSelection(studentProfileId){
   const pkgName = sessionStorage.getItem('pendingPackageName');
   const pkgPrice = sessionStorage.getItem('pendingPackagePrice');
@@ -208,15 +174,11 @@ async function savePendingPackageSelection(studentProfileId){
     });
 
     if (!error || error.code === '23505') {
-      // 23505 = duplicate key, meaning a package is already locked in — either
-      // way, this pending selection is now resolved and can be cleared.
       sessionStorage.removeItem('pendingPackageName');
       sessionStorage.removeItem('pendingPackagePrice');
     }
   }
 
-  // Preferred walk-in date, if the student picked one on the modal — logged
-  // as a pending appointment for staff to confirm/adjust from their side.
   const pkgDate = sessionStorage.getItem('pendingPreferredDate');
   if (pkgDate) {
     const { error: apptError } = await sb.from('appointments').insert({
@@ -292,8 +254,6 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Creating account…';
 
-  // Check the username is free before creating the account, so we can
-  // give a friendly error instead of a raw database constraint failure.
   const usernameTaken = await isUsernameTakenInClients(username);
   if (usernameTaken) {
     btn.disabled = false;
@@ -302,14 +262,6 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
     return;
   }
 
-  // Same email can be used by any number of students (some don't have
-  // their own inbox and borrow a classmate's) — but every single
-  // registration always requires a fresh OTP, proving whoever's
-  // registering right now actually has access to that inbox.
-  // signInWithOtp (not signUp) works for both brand-new AND
-  // already-registered emails — Auth's signUp() deliberately won't
-  // resend for an email it already knows, which is why this is used
-  // instead.
   const { error: otpError } = await sb.auth.signInWithOtp({
     email,
     options: { shouldCreateUser: true, ...(captchaToken ? { captchaToken } : {}) }
@@ -324,9 +276,6 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
     return;
   }
 
-  // Stash the registration details — the Clients row isn't created until
-  // the OTP is actually verified (see otpForm handler below), so a code
-  // nobody redeems never leaves a dangling account behind.
   pendingRegistration = { username, password, email };
 
   document.getElementById('verifyEmailShown').textContent = email;
@@ -334,10 +283,6 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
 });
 
 /* -------------------- LOGIN -------------------- */
-// Accepts either a Username or an Email in the same field.
-// Emails can be shared by several students (each with their own password),
-// so for an email we fetch every matching row and pick the one whose
-// password matches.
 document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('loginAlert');
@@ -358,7 +303,6 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   const looksLikeEmail = identifier.includes('@');
   let query = sb.from('Clients').select('*');
   if (looksLikeEmail) {
-    // Case-insensitive match; escape ilike wildcards (% _ \) so they match literally.
     const safeEmail = identifier.replace(/[\\%_]/g, '\\$&');
     query = query.ilike('Email', safeEmail).limit(50);
   } else {
@@ -370,7 +314,6 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   btn.disabled = false;
   btn.textContent = 'Log in';
 
-  // Same generic message either way — doesn't reveal whether the account exists.
   const row = !error && rows ? rows.find(r => r['Password'] === password) : null;
   if (!row) {
     alertBox('loginAlert', 'Invalid username/email or password.', 'error');
@@ -381,17 +324,12 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     pendingUser = { username: row['Username'], email: row['Email'] };
     await showStep2();
   } else {
-    // Use the real Username from the row (not what was typed) — the session
-    // and dashboard both key off Username, and the user may have typed an email.
     setSession(row['Username']);
     await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
   }
 });
 
 /* -------------------- SOCIAL LOGIN / CONNECT (Google, Facebook) -------------------- */
-// Login stays Clients-based. Google/Facebook only prove "who you are" through a
-// temporary Supabase Auth session; a server-side link (social_links) maps that
-// identity to ONE Clients Username. The Auth session is signed out right after use.
 const OAUTH_KEY = 'gps_oauth';
 // Facebook is switched off: without Meta Business Verification only app testers can log in.
 // Set ENABLE_FACEBOOK to true to bring back the Facebook buttons and the Connect row.
@@ -493,10 +431,6 @@ async function handleOAuthReturn(st){
     return;
   }
 
-  // mode === 'login': log in if this Google/Facebook account is already
-  // connected to a student account; otherwise register a brand-new one
-  // (Username auto-generated from the email, random password, no OTP since
-  // Google/Facebook already verified the email) and go straight to Step 2.
   const { data: reg, error: regError } = await sb.rpc('social_register', { p_provider: st.provider });
   await sb.auth.signOut();
   const info = Array.isArray(reg) ? reg[0] : reg;
@@ -540,9 +474,6 @@ document.getElementById('otpForm').addEventListener('submit', async (e) => {
     return;
   }
 
-  // Code confirmed this inbox is real — now actually create the Clients
-  // row (deferred until now so a code nobody redeems never leaves a
-  // dangling account behind).
   const reg = pendingRegistration;
   pendingRegistration = null;
 
@@ -579,9 +510,6 @@ document.getElementById('resendBtn').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Sending…';
 
-  // signInWithOtp again — same call used to send the first code, works
-  // for resending too. Supabase applies its own built-in rate limiting
-  // to this endpoint, so no separate throttle RPC is needed here.
   const { error } = await sb.auth.signInWithOtp({
     email,
     options: { shouldCreateUser: true, ...(captchaToken ? { captchaToken } : {}) }
@@ -598,10 +526,7 @@ document.getElementById('resendBtn').addEventListener('click', async () => {
   }
 });
 
-/* -------------------- FORGOT PASSWORD (OTP) — step 1: look up account + send code --------------------
-   Username identifies the student (emails can be shared). The 6-digit code
-   goes to the email saved on that Clients row. Same result screen whether
-   or not the username exists, so it doesn't reveal which usernames exist. */
+/* -------------------- FORGOT PASSWORD (OTP) — step 1: look up account + send code -------------------- */
 let gpsReset = { username: '', email: null };
 
 function maskEmail(email){
@@ -685,7 +610,7 @@ document.getElementById('resetForm').addEventListener('submit', async (e) => {
     alertBox('resetAlert', 'Invalid or expired code.', 'error');
     return;
   }
-  await sb.auth.signOut(); // the OTP session is only proof of inbox access
+  await sb.auth.signOut();
 
   const { error: updateError } = await sb
     .from('Clients')
@@ -794,7 +719,7 @@ document.getElementById('cpSaveBtn').addEventListener('click', async () => {
 /* -------------------- SIGN OUT -------------------- */
 document.getElementById('signOutBtn').addEventListener('click', async () => {
   clearSession();
-  await sb.auth.signOut(); // harmless no-op if there was no Auth session
+  await sb.auth.signOut();
   showView('login');
 });
 
@@ -813,26 +738,17 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(tab.dataset.tab).classList.add('active');
-    // On mobile, close the dropdown after picking a section.
     tabsList.classList.remove('open');
     tabsToggle.setAttribute('aria-expanded', 'false');
   });
 });
 
 /* -------------------- PROFILE STATE -------------------- */
-let currentUser = null;      // Supabase Auth user (identity/verification/login)
-let currentProfile = null;   // Clients row (real registration data)
+let currentUser = null;
+let currentProfile = null;
 let profileEditMode = false;
 const FIXED_SCHOOL = 'Central Mindanao University';
 
-// School/College/Course/Major/Gender options all come from the real
-// GradPro "Details" table — the exact same table Form1_StudentInfo.vb
-// reads from (DetailsCache.vb). Each dropdown is independent, matching
-// the desktop app exactly: Major suggestions come from
-// DetailsCache.AllMajors (every distinct Major, unfiltered) rather than
-// being chained to whatever Course was picked — same for Course vs
-// School. See txtMajor_TextChanged / IsMajorValid in Form1_StudentInfo.vb
-// ("Case Else : pool = DetailsCache.AllMajors  ' college").
 let DETAILS_ROWS = [];
 
 async function loadLookups(){
@@ -869,17 +785,7 @@ function distinctMajors(){
 }
 
 // ================================================================
-//  TYPE-AHEAD — same behavior as txtSchool/txtCourse/txtMajor in
-//  Form1_StudentInfo.vb: type to filter a suggestion list, arrow keys
-//  to move through it, Tab or Enter picks the highlighted match and
-//  moves on, blur clears anything that isn't an exact match from the
-//  list (ValidateXField equivalent).
-//
-//  inputId/listId: element ids (list is a plain <div> under the input,
-//  styled via .suggest-list). getPool(): returns the current array of
-//  valid strings to match against. opts.required: if true, a field
-//  left blank on blur also counts as invalid (matches School/Gender
-//  being required; Course/Major/College stay optional when empty).
+//  TYPE-AHEAD
 // ================================================================
 function setupTypeahead(inputId, listId, getPool, opts){
   opts = opts || {};
@@ -936,8 +842,6 @@ function setupTypeahead(inputId, listId, getPool, opts){
         pick(items[activeIndex >= 0 ? activeIndex : 0]);
       }
     } else if (e.key === 'Tab'){
-      // Same as the desktop app: Tab both picks the match AND moves
-      // focus on — don't preventDefault, just fill the value first.
       if (list.classList.contains('visible') && items.length){
         pick(items[activeIndex >= 0 ? activeIndex : 0]);
       }
@@ -946,8 +850,6 @@ function setupTypeahead(inputId, listId, getPool, opts){
     }
   });
 
-  // mousedown (not click) fires before the input's blur handler, so a
-  // click on a suggestion registers before blur tries to clear the field.
   list.addEventListener('mousedown', (e) => {
     const el = e.target.closest('.suggest-item');
     if (!el) return;
@@ -966,7 +868,7 @@ function setupTypeahead(inputId, listId, getPool, opts){
       }
       const validMatch = pool.find(v => v.toLowerCase() === typed.toLowerCase());
       if (validMatch){
-        input.value = validMatch; // normalize to the canonical stored casing
+        input.value = validMatch;
       } else {
         input.value = '';
         if (opts.onInvalid) opts.onInvalid('nomatch');
@@ -990,19 +892,10 @@ function escapeHtml(str){
 }
 
 // ================================================================
-//  Name capitalization (SmartName / FormatSuffix)
-//  2-letter-or-shorter words kept EXACTLY as typed (JC stays JC, Ia stays Ia);
-//  acronyms in the list stay uppercase; everything else keeps whatever
-//  capital letters the student typed (LeAnne stays LeAnne, McDonald stays
-//  McDonald) and only auto-capitalizes the first letter if it was lowercase.
-//  This way a student's name is never silently changed after they typed it
-//  correctly once — re-saving the same value won't flatten it to lowercase.
+//  Name capitalization
+//  ONLY the Last Name is auto-capitalized (smartName).
+//  First Name is saved and shown exactly as the student typed it.
 // ================================================================
-const ACRONYMS = new Set([
-  'SHS', 'BED', 'IBED', 'STEM', 'ABM', 'HUMSS', 'TVL', 'GAS', 'ICT',
-  'CPU', 'RAM', 'USB', 'HTML', 'CSS', 'SQL', 'API', 'URL', 'PDF'
-].map(a => a.toUpperCase()));
-
 function capitalizeFirst(w){
   if (!w) return w;
   return w[0].toUpperCase() + w.slice(1);
@@ -1010,32 +903,14 @@ function capitalizeFirst(w){
 
 function smartName(str){
   if (!str) return '';
-  const parts = str.trim().split(/\s+/).filter(Boolean);
-  return parts.map(w => {
-    if (ACRONYMS.has(w.toUpperCase())) return w.toUpperCase();
+  return str.trim().split(/\s+/).filter(Boolean).map(w => {
     if (w.length <= 2) return w;
-
-    // Naa nay laktod nga internal capital (e.g. LeAnne, McDonald, DiCaprio)
-    // gikan mismo sa gi-type — respetohon kini, first letter ra i-fix.
-    const hasInternalCap = /[A-Z]/.test(w.slice(1));
-    if (hasInternalCap) return capitalizeFirst(w);
-
-    // Walay internal capital — i-check kung naay known prefix (Mc, Dela, ...)
-    // aron ang sunod nga letra human sa prefix ma-capitalize pud.
-    for (const prefix of NAME_PREFIXES) {
-      if (w.length > prefix.length && w.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase()) {
-        const rest = w.slice(prefix.length);
-        return capitalizeFirst(prefix) + capitalizeFirst(rest.toLowerCase());
-      }
-    }
-
-    // Normal nga pulong — title case.
+    if (/[A-Z]/.test(w.slice(1))) return capitalizeFirst(w); // respect typed internal caps (McDonald, DiCaprio)
+    if (/^mc[a-z]{3,}$/i.test(w)) return 'Mc' + capitalizeFirst(w.slice(2).toLowerCase());
     return w[0].toUpperCase() + w.slice(1).toLowerCase();
   }).join(' ');
 }
 
-// Roman numerals auto-uppercased (iii → III), everything else kept as typed
-// (Jr, Sr, Jr. stay exactly as the person wrote them).
 const ROMAN_NUMERALS = new Set(['I','II','III','IV','V','VI','VII','VIII','IX','X']);
 function formatSuffix(str){
   if (!str) return '';
@@ -1047,8 +922,6 @@ function formatSuffix(str){
   return t;
 }
 
-// Auto-capitalize helpers — short all-caps names such as JC or MCY keep their
-// original capitalization; longer names use normal title case.
 function titleCase(str){
   if (!str) return str;
   return str.trim().split(/\s+/).map(word => {
@@ -1060,18 +933,20 @@ function titleCase(str){
   }).join(' ');
 }
 
-// Re-capitalizes a name field the moment the person clicks/tabs away from it.
+// Last Name is re-capitalized when the person clicks/tabs away. First Name is left alone.
 function attachAutoCapitalize(prefix){
   const ln = document.getElementById(prefix + 'LastName');
-  if (ln) ln.addEventListener('blur', () => { ln.value = smartName(ln.value); });
+  if (ln) ln.addEventListener('blur', () => {
+    ln.value = smartName(ln.value);
+    ln.dispatchEvent(new Event('input', { bubbles: true })); // refresh the name preview
+  });
   const mi = document.getElementById(prefix + 'MiddleInitial');
-  if (mi) mi.addEventListener('blur', () => { mi.value = mi.value.toUpperCase(); });
+  if (mi) mi.addEventListener('blur', () => {
+    mi.value = mi.value.toUpperCase();
+    mi.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 }
 
-// Same exact rule as BuildFullName() in Form1_StudentInfo.vb:
-//   None       → Taton, Michael Ryan G.
-//   After Last → Taton Jr., Michael Ryan G.
-//   After First→ Taton, Michael Ryan Jr. G.
 function buildFullName(lastName, firstName, mi, suffix, placement){
   lastName = (lastName || '').trim();
   firstName = (firstName || '').trim();
@@ -1083,9 +958,7 @@ function buildFullName(lastName, firstName, mi, suffix, placement){
   return lastName + ', ' + firstName + ' ' + suffix + miPart;
 }
 
-/* -------------------- LOAD DASHBOARD DATA --------------------
-   clientRow is optional — pass it when the caller already fetched it
-   (e.g. loginForm) to avoid querying Clients twice. */
+/* -------------------- LOAD DASHBOARD DATA -------------------- */
 async function loadDashboard(user, clientRow){
   const [profileRes] = await Promise.all([
     clientRow ? Promise.resolve({ data: [clientRow] }) :
@@ -1122,7 +995,7 @@ function initDashboardCarousel(){
     year: 'numeric', month: 'long', day: 'numeric'
   });
 
-  if (dbCarouselBuilt) return; // only build once per session
+  if (dbCarouselBuilt) return;
   dbCarouselBuilt = true;
 
   const carousel = document.getElementById('dbCarousel');
@@ -1135,7 +1008,7 @@ function initDashboardCarousel(){
     img.src = file;
     img.alt = `Studio output photo ${i + 1}`;
     if (i === 0) img.classList.add('active');
-    img.onerror = () => img.remove(); // skip files not uploaded yet
+    img.onerror = () => img.remove();
     carousel.appendChild(img);
 
     const dot = document.createElement('span');
@@ -1161,10 +1034,6 @@ function showDbSlide(i){
   imgs[dbSlideIndex]?.classList.add('active');
   dots[dbSlideIndex]?.classList.add('active');
 }
-
-// Studio team avatars — placeholder until real staff data is wired up.
-/* document.getElementById('dbTeamRow').innerHTML = ['', '', '']
-  .map(initials => `<div class="db-avatar">${initials}</div>`).join(''); */
 
 /* -------------------- NOTICE: reads the announcements table -------------------- */
 function noticeRowHTML(n, full){
@@ -1204,7 +1073,6 @@ async function renderNotices(){
   fullList.innerHTML = data.map(n => noticeRowHTML(n, true)).join('');
 }
 
-// "See all" on the dashboard notice preview jumps to the Notice tab.
 document.querySelectorAll('[data-goto-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.gotoTab;
@@ -1249,12 +1117,7 @@ async function renderAppointments(){
   list.innerHTML = data.length ? data.map(apptRowHTML).join('') : '<div class="stub-empty">No appointments scheduled yet.</div>';
 }
 
-/* -------------------- RENDER PROFILE GRID --------------------
-   currentProfile is now the real Clients row. Field set matches
-   Form1_StudentInfo.vb: Last/First/Middle Initial/Suffix (+ placement),
-   School, Course, Major, Contact, Socials. Email/Username come from
-   Supabase Auth + Clients respectively and stay locked (set at
-   registration, not editable here). */
+/* -------------------- RENDER PROFILE GRID -------------------- */
 function renderProfileGrid(){
   const grid = document.getElementById('profileGrid');
   const actions = document.getElementById('profileEditActions');
@@ -1474,24 +1337,17 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   profileEditMode = false;
   renderProfileGrid();
   alertBox('profileAlert', 'Details updated.', 'success');
+
   const dn = (currentProfile['First Name'] || '').trim() || currentProfile['Username'] || '';
   document.getElementById('dashGreeting').textContent = dn ? `Welcome, ${dn}` : 'Welcome';
 });
 
-/* -------------------- STEP 2 — student info registration --------------------
-   Shown right after email verification succeeds, and again on login/reload
-   if a verified account never finished it. Same fields as
-   Form1_StudentInfo.vb, minus Email (already captured at account creation
-   and confirmed via the OTP step — never re-asked). */
+/* -------------------- STEP 2 — student info registration -------------------- */
 let step2TypeaheadWired = false;
 
 async function showStep2(){
   await loadLookups();
 
-  // Clear EVERY field before showing this screen — critical when the same
-  // email is reused by a different student: without this, whatever the
-  // previous person typed would still be sitting in these inputs since
-  // the form itself never unmounts between registrations in the same tab.
   ['s2LastName','s2FirstName','s2MiddleInitial','s2Suffix',
    's2Gender','s2College','s2Course','s2Major',
    's2Contact','s2Socials'].forEach(id => {
@@ -1546,7 +1402,7 @@ document.querySelectorAll('input[name="s2SuffixPlacement"]').forEach(r =>
 
 document.getElementById('step2Cancel').addEventListener('click', async () => {
   clearSession();
-  await sb.auth.signOut(); // harmless no-op if there was no Auth session
+  await sb.auth.signOut();
   pendingUser = null;
   showView('login');
 });
@@ -1649,7 +1505,7 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
 })();
 
 /* -------------------- INACTIVITY AUTO-LOGOUT (5 min) -------------------- */
-const INACTIVITY_LIMIT_MS = 5 * 60 * 1000; // 5 minutes
+const INACTIVITY_LIMIT_MS = 5 * 60 * 1000;
 let inactivityTimer = null;
 
 function resetInactivityTimer(){
@@ -1663,12 +1519,11 @@ function resetInactivityTimer(){
   }, INACTIVITY_LIMIT_MS);
 }
 
-// Any of these user actions counts as "active" and resets the countdown.
 ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
   document.addEventListener(evt, resetInactivityTimer, { passive: true });
 });
 
-resetInactivityTimer(); // start the timer on page load
+resetInactivityTimer();
 
 /* -------------------- COOKIE CONSENT BANNER -------------------- */
 const COOKIE_CONSENT_KEY = 'gpsCookieConsent';
