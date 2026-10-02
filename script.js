@@ -1003,8 +1003,6 @@ const ACRONYMS = new Set([
   'CPU', 'RAM', 'USB', 'HTML', 'CSS', 'SQL', 'API', 'URL', 'PDF'
 ].map(a => a.toUpperCase()));
 
-const NAME_PREFIXES = ['Mc', 'Mac', 'De', 'Di', 'Da', 'Del', 'Dela', 'Van', 'Von', 'La', 'Le', 'Al'];
-
 function capitalizeFirst(w){
   if (!w) return w;
   return w[0].toUpperCase() + w.slice(1);
@@ -1064,10 +1062,8 @@ function titleCase(str){
 
 // Re-capitalizes a name field the moment the person clicks/tabs away from it.
 function attachAutoCapitalize(prefix){
-  [prefix + 'LastName', prefix + 'FirstName'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('blur', () => { el.value = smartName(el.value); });
-  });
+  const ln = document.getElementById(prefix + 'LastName');
+  if (ln) ln.addEventListener('blur', () => { ln.value = smartName(ln.value); });
   const mi = document.getElementById(prefix + 'MiddleInitial');
   if (mi) mi.addEventListener('blur', () => { mi.value = mi.value.toUpperCase(); });
 }
@@ -1101,7 +1097,7 @@ async function loadDashboard(user, clientRow){
   currentProfile = (profileRes.data && profileRes.data[0]) || {};
   profileEditMode = false;
 
-  const displayName = smartName(currentProfile['First Name'] || '') || currentProfile['Username'] || '';
+  const displayName = (currentProfile['First Name'] || '').trim() || currentProfile['Username'] || '';
   document.getElementById('dashGreeting').textContent = displayName ? `Welcome, ${displayName}` : 'Welcome';
 
   renderProfileGrid();
@@ -1388,7 +1384,7 @@ function renderProfileGrid(){
   const preview = () => {
     document.getElementById('edit_NamePreview').textContent = buildFullName(
       smartName(document.getElementById('edit_LastName').value),
-      smartName(document.getElementById('edit_FirstName').value),
+      document.getElementById('edit_FirstName').value.trim(),
       document.getElementById('edit_MiddleInitial').value.toUpperCase(),
       formatSuffix(document.getElementById('edit_Suffix').value),
       (document.querySelector('input[name="edit_SuffixPlacement"]:checked') || {}).value || 'none'
@@ -1419,7 +1415,7 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   const val = (id) => document.getElementById(id).value.trim();
 
   const lastName = smartName(val('edit_LastName'));
-  const firstName = smartName(val('edit_FirstName'));
+  const firstName = val('edit_FirstName');
   const middleInitial = val('edit_MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('edit_Suffix'));
   const gender = val('edit_Gender');
@@ -1453,12 +1449,6 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Saving…';
 
-  // Matched by Username — the only field guaranteed unique in Clients.
-  // Email intentionally is NOT unique (shared/borrowed emails are
-  // allowed), so matching by Email here could hit multiple rows at
-  // once and try to give them all the same new Full Name — a
-  // self-inflicted duplicate-key error even when no row previously
-  // had that name.
   const { data, error } = await sb
     .from('Clients')
     .update(updates)
@@ -1484,6 +1474,8 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   profileEditMode = false;
   renderProfileGrid();
   alertBox('profileAlert', 'Details updated.', 'success');
+  const dn = (currentProfile['First Name'] || '').trim() || currentProfile['Username'] || '';
+  document.getElementById('dashGreeting').textContent = dn ? `Welcome, ${dn}` : 'Welcome';
 });
 
 /* -------------------- STEP 2 — student info registration --------------------
@@ -1540,7 +1532,7 @@ function updateStep2Preview(){
   const placement = (document.querySelector('input[name="s2SuffixPlacement"]:checked') || {}).value || 'none';
   document.getElementById('s2NamePreview').textContent = buildFullName(
     smartName(document.getElementById('s2LastName').value),
-    smartName(document.getElementById('s2FirstName').value),
+    document.getElementById('s2FirstName').value.trim(),
     document.getElementById('s2MiddleInitial').value.toUpperCase(),
     formatSuffix(document.getElementById('s2Suffix').value),
     placement
@@ -1567,7 +1559,7 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
 
   const val = (id) => document.getElementById(id).value.trim();
   const lastName = smartName(val('s2LastName'));
-  const firstName = smartName(val('s2FirstName'));
+  const firstName = val('s2FirstName');
   const middleInitial = val('s2MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('s2Suffix'));
   const gender = val('s2Gender');
@@ -1587,12 +1579,6 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Saving…';
 
-  // Matched by Username — Email is intentionally non-unique (shared/
-  // borrowed emails), so matching by Email here could hit more than
-  // one row and try to give them all the same Full Name at once,
-  // causing a duplicate-key error even when no row previously had
-  // that name (this was a real bug — confirmed by finding zero
-  // matching rows on a pre-check, yet the update still failed).
   const { data, error } = await sb
     .from('Clients')
     .update({
@@ -1616,9 +1602,6 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   btn.textContent = 'Next';
 
   if (error) {
-    // "Full Name" is Clients' primary key — this fires if someone with the
-    // exact same Last/First/Middle Initial/Suffix combo is already
-    // registered (a real duplicate, or leftover test data under that name).
     if (error.code === '23505' || /duplicate key|Clients_pkey/i.test(error.message)) {
       alertBox('step2Alert',
         `"${fullName}" is already registered in our system. If this is you and you already have an account, please log in instead. If someone else shares this exact name, add a Middle Initial or Suffix to tell your record apart, or contact the studio for help.`,
