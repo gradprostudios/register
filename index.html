@@ -180,20 +180,18 @@
       <button class="btn btn-ghost" id="backToLoginFromVerify">Back to login</button>
     </div>
 
-    <!-- ---------------- FORGOT PASSWORD / USERNAME — step 1: request code ---------------- -->
+    <!-- ---------------- FORGOT PASSWORD — step 1: username + email, then request code ---------------- -->
     <div class="card hidden" id="view-forgot">
       <div class="eyebrow card-eyebrow">Student Portal</div>
       <h2 class="card-title">Forgot password?</h2>
-      <p class="card-sub">
-        Enter your username. We will send a 6-digit verification code to the email registered to that account.
-      </p>
+      <p class="card-sub">Enter your username or the email registered to your account. We will send a 6-digit verification code to that email.</p>
 
       <div id="forgotAlert"></div>
 
       <form id="forgotForm">
         <div class="field">
-          <label for="forgotEmail">Username</label>
-          <input type="text" id="forgotEmail" required autocomplete="username" placeholder="e.g. mariasantos">
+          <label for="forgotIdentifier">Username or Email</label>
+          <input type="text" id="forgotIdentifier" required autocomplete="username" placeholder="e.g. mariasantos or maria@email.com">
         </div>
         <button type="submit" class="btn btn-primary" id="forgotSubmit">Send code</button>
       </form>
