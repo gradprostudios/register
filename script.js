@@ -526,7 +526,7 @@ document.getElementById('resendBtn').addEventListener('click', async () => {
   }
 });
 
-/* -------------------- FORGOT PASSWORD (OTP) — step 1: look up account + send code -------------------- */
+/* -------------------- FORGOT PASSWORD (OTP) — step 1: username or email, then send code -------------------- */
 let gpsReset = { username: '', email: null };
 
 function maskEmail(email){
@@ -542,14 +542,31 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('forgotAlert');
 
-  const username = document.getElementById('forgotEmail').value.trim();
+  const identifier = document.getElementById('forgotIdentifier').value.trim();
   const btn = document.getElementById('forgotSubmit');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Sending code…';
 
-  const { data } = await sb.from('Clients').select('Username, Email').eq('Username', username).limit(1);
-  const row = data && data[0];
-  gpsReset = { username, email: null };
+  // One box: if it has an "@" look up by email, otherwise by username.
+  let query = sb.from('Clients').select('Username, Email');
+  if (identifier.includes('@')) {
+    const safeEmail = identifier.replace(/[\\%_]/g, '\\$&');
+    query = query.ilike('Email', safeEmail).limit(5);
+  } else {
+    query = query.eq('Username', identifier).limit(1);
+  }
+  const { data } = await query;
+  const rows = data || [];
+
+  if (rows.length > 1) {
+    btn.disabled = false;
+    btn.textContent = 'Send code';
+    alertBox('forgotAlert', 'More than one account uses that email. Please enter your username instead.', 'error');
+    return;
+  }
+
+  const row = rows[0];
+  gpsReset = { username: identifier, email: null };
 
   if (row && row.Email) {
     const { error } = await sendOtp(row.Email);
@@ -565,8 +582,9 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   btn.disabled = false;
   btn.textContent = 'Send code';
 
+  // Same message whether or not it matched, so nobody can probe which accounts exist.
   document.getElementById('resetCopy').innerHTML =
-    'If <strong id="resetEmailShown">' + escapeHtml(username) + '</strong> exists, we sent a 6-digit code to its registered email' +
+    'If <strong id="resetEmailShown">' + escapeHtml(identifier) + '</strong> matches an account, we sent a 6-digit code to its registered email' +
     (gpsReset.email ? ' (' + escapeHtml(maskEmail(gpsReset.email)) + ')' : '') +
     '. Enter it below and choose a new password.';
   document.getElementById('resetOtpCode').value = '';
