@@ -1142,6 +1142,7 @@ async function renderAppointments(){
 }
 
 /* -------------------- RENDER PROFILE GRID -------------------- */
+/* -------------------- RENDER PROFILE GRID -------------------- */
 function renderProfileGrid(){
   const grid = document.getElementById('profileGrid');
   const actions = document.getElementById('profileEditActions');
@@ -1217,17 +1218,17 @@ function renderProfileGrid(){
       <input type="text" id="edit_School" value="${escapeHtml(FIXED_SCHOOL)}" readonly>
       <div class="suggest-list" id="edit_SchoolList"></div>
     </div>
-    <div class="profile-field suggest-wrap">
+    <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_College">College</label>
       <input type="text" id="edit_College" value="${escapeHtml(p['College'] || '')}" autocomplete="off" placeholder="Type to search (leave blank if none)">
       <div class="suggest-list" id="edit_CollegeList"></div>
     </div>
-    <div class="profile-field suggest-wrap">
+    <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_Course">Course</label>
       <input type="text" id="edit_Course" value="${escapeHtml(p['Course'] || '')}" autocomplete="off" placeholder="Type to search your course">
       <div class="suggest-list" id="edit_CourseList"></div>
     </div>
-    <div class="profile-field suggest-wrap">
+    <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_Major">Major</label>
       <input type="text" id="edit_Major" value="${escapeHtml(p['Major'] || '')}" autocomplete="off" placeholder="Type to search (leave blank if none)">
       <div class="suggest-list" id="edit_MajorList"></div>
