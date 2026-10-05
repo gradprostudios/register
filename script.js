@@ -801,27 +801,11 @@ function distinctCourses(){
     .filter(v => !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
-// Majors of the course currently typed in courseInputId. A course with no
-// majors gives an empty list (Major stays blank). With no course picked yet,
-// every major is offered, same as before.
-function distinctMajorsFor(courseInputId){
-  const el = document.getElementById(courseInputId);
-  const course = el ? el.value.trim().toLowerCase() : '';
+function distinctMajors(){
   const seen = new Set();
-  return DETAILS_ROWS
-    .filter(r => !course || (r['Course'] || '').trim().toLowerCase() === course)
-    .map(r => (r['Major'] || '').trim())
+  return DETAILS_ROWS.map(r => (r['Major'] || '').trim())
     .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-}
-// When the course changes, drop a major that doesn't belong to it.
-function clearMajorIfNotInCourse(courseInputId, majorInputId){
-  const majorEl = document.getElementById(majorInputId);
-  if (!majorEl) return;
-  const major = majorEl.value.trim().toLowerCase();
-  if (!major) return;
-  const ok = distinctMajorsFor(courseInputId).some(m => m.toLowerCase() === major);
-  if (!ok) majorEl.value = '';
 }
 
 // ================================================================
@@ -1280,10 +1264,9 @@ function renderProfileGrid(){
   setupTypeahead('edit_Course', 'edit_CourseList', distinctCourses, {
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Course from the suggestions, or leave it blank.', 'error'); }
   });
-  setupTypeahead('edit_Major', 'edit_MajorList', () => distinctMajorsFor('edit_Course'), {
+  setupTypeahead('edit_Major', 'edit_MajorList', distinctMajors, {
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Major from the suggestions, or leave it blank.', 'error'); }
   });
-  document.getElementById('edit_Course').addEventListener('change', () => clearMajorIfNotInCourse('edit_Course', 'edit_Major'));
 
   const preview = () => {
     document.getElementById('edit_NamePreview').textContent = buildFullName(
@@ -1417,10 +1400,9 @@ async function showStep2(){
     setupTypeahead('s2Course', 's2CourseList', distinctCourses, {
       onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a Course from the suggestions, or leave it blank.', 'error'); }
     });
-    setupTypeahead('s2Major', 's2MajorList', () => distinctMajorsFor('s2Course'), {
+    setupTypeahead('s2Major', 's2MajorList', distinctMajors, {
       onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a Major from the suggestions, or leave it blank.', 'error'); }
     });
-    document.getElementById('s2Course').addEventListener('change', () => clearMajorIfNotInCourse('s2Course', 's2Major'));
   }
 
   showView('step2');
