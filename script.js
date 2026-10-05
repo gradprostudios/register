@@ -1003,6 +1003,7 @@ async function loadDashboard(user, clientRow){
   initDashboardCarousel();
   renderNotices();
   renderAppointments();
+  renderSoftCopies();
   renderSocialList();
   cpReset();
   clearAlert('cpAlert');
@@ -1568,3 +1569,40 @@ document.getElementById('cookieAcceptBtn').addEventListener('click', () => {
 });
 
 showCookieBannerIfNeeded();
+
+/* -------------------- SOFT COPIES: reads the Drive folder columns on the Clients row -------------------- */
+function softCopyRowHTML(label, url, expiresAt){
+  const ms = new Date(expiresAt) - Date.now();
+  const active = !!url && ms > 0;
+  const days = Math.ceil(ms / 86400000);
+  const exp = new Date(expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const msg = active ? `Access ends ${exp} (${days} day${days === 1 ? '' : 's'} left). Open it with the email you registered with. If asked, request a PIN and check that inbox.` : 'This link has expired. Please contact the studio to request a new one.';
+  const btn = active ? `<div class="notice-meta"><a class="btn btn-primary btn-inline" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open folder</a></div>` : '';
+  return `<div class="notice-row full"><div class="notice-title">${label}<span class="appt-status ${active ? 'confirmed' : ''}">${active ? 'Available' : 'Expired'}</span></div><div class="notice-body">${msg}</div>${btn}</div>`;
+}
+
+function renderSoftCopies(){
+  const list = document.getElementById('softCopyList');
+  if (!list) return;
+  const p = currentProfile || {};
+  const items = [['RAW photos', p.raw_folder_url, p.raw_expires_at], ['Edited photos', p.edited_folder_url, p.edited_expires_at]].filter(it => it[2]);
+  list.innerHTML = items.length ? items.map(it => softCopyRowHTML(it[0], it[1], it[2])).join('') : '<div class="stub-empty">No photos have been delivered yet.</div>';
+}
+
+/* Optional: one empty folder per registered student of a school, named by Full Name, inside RAW_UPLOAD/<School>. Safe to run again. */
+function createFolders(){
+  const SCHOOL = 'Adventist College of Technology'; // change per school
+  const start = Date.now();
+  const root = DriveApp.getFolderById(CONFIG.UPLOAD_ID);
+  const sf = root.getFoldersByName(SCHOOL);
+  const parent = sf.hasNext() ? sf.next() : root.createFolder(SCHOOL);
+  const rows = sb_('GET', 'Clients?School=eq.' + encodeURIComponent(SCHOOL) + '&' + encodeURIComponent('Full Name') + '=not.like.' + encodeURIComponent('PENDING*') + '&select=' + encodeURIComponent('"Full Name"') + '&order=' + encodeURIComponent('Full Name') + '&limit=1000');
+  let made = 0;
+  for (const r of rows) {
+    if (Date.now() - start > 280000) { Logger.log('Time limit reached. Run again to continue.'); break; }
+    const fname = String(r['Full Name']).replace(/[\/\\]/g, ' ').trim();
+    if (!fname || parent.getFoldersByName(fname).hasNext()) continue;
+    parent.createFolder(fname); made++;
+  }
+  Logger.log('Created ' + made + ' folders in ' + SCHOOL);
+}
