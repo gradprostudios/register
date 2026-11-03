@@ -1,7 +1,7 @@
 // `sb` (the Supabase client) comes from supabase-client.js.
 
 /* -------------------- CLOUDFLARE TURNSTILE (bot protection) -------------------- */
-const TURNSTILE_SITE_KEY = "0x4AAAAAAD4Y5yYW8B-1flNT";
+const TURNSTILE_SITE_KEY = "0x4AAAAAAFxxrJZe7_l3TnIA";
 let turnstileWidgets = {};
 
 // Cloudflare calls this itself once its script has loaded (render=explicit mode).
