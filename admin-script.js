@@ -128,7 +128,7 @@ $('dialogOk').addEventListener('click', async () => {
 let currentStaff = null;
 
 // Cloudflare Turnstile: with CAPTCHA on in Supabase, password sign-in needs this token.
-const TURNSTILE_SITE_KEY = "0x4AAAAAAD4Y5yYW8B-1flNT";
+const TURNSTILE_SITE_KEY = "0x4AAAAAAFxxrJZe7_l3TnIA";
 let staffCaptcha;
 window.onloadTurnstileCallback = function(){
   if (typeof turnstile !== 'undefined') staffCaptcha = turnstile.render('#turnstileStaff', { sitekey: TURNSTILE_SITE_KEY });
