@@ -1,7 +1,4 @@
-const SUPABASE_URL = "https://rkxuwluybpynxvguhqpn.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_uBCFBzLjcvRSK5ZcIevXZw_GzhneWhJ";
-
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// `sb` (the Supabase client) comes from supabase-client.js.
 
 /* -------------------- CLOUDFLARE TURNSTILE (bot protection) -------------------- */
 const TURNSTILE_SITE_KEY = "0x4AAAAAAD4Y5yYW8B-1flNT";
@@ -46,28 +43,84 @@ document.querySelectorAll('.pw-toggle').forEach(btn => {
 });
 
 /* -------------------- view helpers -------------------- */
-let pendingUser = null;
+// Held in memory only between the register form and the OTP check — never stored.
 let pendingRegistration = null;
 
-function isUsernameTakenInClients(username){
-  return sb.from('Clients').select('Username').eq('Username', username).limit(1)
-    .then(({ data, error }) => {
-      if (error) { console.error(error); return false; }
-      return data && data.length > 0;
-    });
-}
-
-function pendingFullName(username){
-  return 'PENDING::' + username;
-}
 function isPendingRegistration(clientRow){
   return !clientRow || (clientRow['Full Name'] || '').indexOf('PENDING::') === 0;
 }
 
-const SESSION_KEY = 'gps_username';
-function setSession(username){ sessionStorage.setItem(SESSION_KEY, username); }
+// Students are not Supabase Auth users: the portal session is an opaque token from
+// student_login / student_register / student_session_from_oauth / student_reset_password.
+const SESSION_KEY = 'gps_session_token';
+const SCHED_PROMPTED_KEY = 'gps_sched_prompted'; // schedule modal already auto-opened (or skipped) this login
+function setSession(token){ sessionStorage.setItem(SESSION_KEY, token); }
 function getSession(){ return sessionStorage.getItem(SESSION_KEY); }
-function clearSession(){ sessionStorage.removeItem(SESSION_KEY); }
+function clearSession(){
+  sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SCHED_PROMPTED_KEY);
+}
+function firstRow(data){ return Array.isArray(data) ? data[0] : data; }
+
+const ERROR_TEXT = {
+  invalid_session: 'Your session has expired. Please log in again.',
+  username_taken: 'That username is already taken. Please choose another.',
+  invalid_username: 'Usernames must be 3–24 characters using only letters, numbers, dots or underscores.',
+  weak_password: 'Password must be 8 to 72 characters.',
+  too_many_attempts: 'Too many failed attempts. Please wait 15 minutes and try again.',
+  recent_signin_required: 'Your verification expired. Please request a new code and try again.',
+  not_authorized: 'That code was not sent to the email on this account. Please request a new code.',
+  no_account: 'No student account uses that email. Please register first.',
+  last_name_required: 'Please enter Last Name.',
+  first_name_required: 'Please enter First Name.',
+  gender_required: 'Please select your Gender.',
+  school_required: 'Please select your School.',
+  contact_required: 'Please enter Contact Number.',
+  invalid_full_name: 'Please check your name details.',
+  school_locked: 'You already have a pictorial booking, so your school can’t be changed here. Please contact the studio.',
+  slot_full: 'That time slot just filled up. Please pick another time.',
+  already_booked: 'You already have a pictorial schedule.',
+  wrong_school: 'That slot is for a different school.',
+  slot_unavailable: 'That time slot is no longer available. Please pick another time.',
+  booking_closed: 'Pictorial booking is currently closed for your school.',
+  slot_not_found: 'That time slot no longer exists. Please pick another time.',
+  past_cutoff: 'It is too close to your pictorial schedule to change it online. Please contact the studio.',
+  booking_started: 'Your pictorial schedule has already started, so it can’t be changed online. Please contact the studio.',
+  same_slot: 'That is already your schedule. Pick a different date or time.',
+  request_pending: 'You already have a pending request. Please wait for the studio to respond.',
+  no_active_booking: 'You don’t have an active pictorial booking.',
+  preferred_slot_required: 'Please pick your preferred new schedule.',
+};
+function errText(error, fallback){
+  const m = (error && error.message) || '';
+  return ERROR_TEXT[m] || m || fallback || 'Something went wrong. Please try again.';
+}
+
+// Every student RPC goes through here so an expired/revoked token always lands back on login.
+async function rpc(name, args){
+  const res = await sb.rpc(name, args);
+  if (res.error && res.error.message === 'invalid_session') {
+    res.error.handled = true;
+    expireSession(ERROR_TEXT.invalid_session);
+  }
+  return res;
+}
+// Shows an RPC error in an alert box unless rpc() already sent the student to login.
+function rpcFail(alertId, error, fallback){
+  if (error && error.handled) return;
+  alertBox(alertId, escapeHtml(errText(error, fallback)), 'error');
+}
+
+function expireSession(message){
+  clearSession();
+  closeSchedule();
+  currentUser = null;
+  currentProfile = null;
+  bookingState = null;
+  showView('login');
+  if (message) alertBox('loginAlert', message, 'error');
+  else clearAlert('loginAlert');
+}
 
 const els = {
   authShell: document.getElementById('authShell'),
@@ -162,38 +215,6 @@ function showSelectedPackageBanner(){
 }
 showSelectedPackageBanner();
 
-async function savePendingPackageSelection(studentProfileId){
-  const pkgName = sessionStorage.getItem('pendingPackageName');
-  const pkgPrice = sessionStorage.getItem('pendingPackagePrice');
-
-  if (pkgName && pkgPrice) {
-    const { error } = await sb.from('package_selections').insert({
-      student_id: studentProfileId,
-      package_name: pkgName,
-      package_price: Number(pkgPrice)
-    });
-
-    if (!error || error.code === '23505') {
-      sessionStorage.removeItem('pendingPackageName');
-      sessionStorage.removeItem('pendingPackagePrice');
-    }
-  }
-
-  const pkgDate = sessionStorage.getItem('pendingPreferredDate');
-  if (pkgDate) {
-    const { error: apptError } = await sb.from('appointments').insert({
-      student_id: studentProfileId,
-      appointment_type: 'photoshoot',
-      scheduled_at: pkgDate + 'T00:00:00',
-      status: 'pending',
-      notes: 'Preferred walk-in date from package selection — awaiting studio confirmation.'
-    });
-    if (!apptError) {
-      sessionStorage.removeItem('pendingPreferredDate');
-    }
-  }
-}
-
 /* -------------------- nav links between login/register/forgot -------------------- */
 document.getElementById('goToRegister').addEventListener('click', (e) => {
   e.preventDefault();
@@ -254,11 +275,12 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Creating account…';
 
-  const usernameTaken = await isUsernameTakenInClients(username);
-  if (usernameTaken) {
+  const { data: available, error: availError } = await sb.rpc('student_username_available', { p_username: username });
+  if (availError || !available) {
     btn.disabled = false;
     btn.textContent = 'Create account';
-    alertBox('registerAlert', 'That username is already taken. Please choose another.', 'error');
+    resetTurnstile('register');
+    alertBox('registerAlert', availError ? escapeHtml(errText(availError)) : ERROR_TEXT.username_taken, 'error');
     return;
   }
 
@@ -300,34 +322,38 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Logging in…';
 
-  const looksLikeEmail = identifier.includes('@');
-  let query = sb.from('Clients').select('*');
-  if (looksLikeEmail) {
-    const safeEmail = identifier.replace(/[\\%_]/g, '\\$&');
-    query = query.ilike('Email', safeEmail).limit(50);
-  } else {
-    query = query.eq('Username', identifier).limit(1);
-  }
-  const { data: rows, error } = await query;
+  const { data, error } = await sb.rpc('student_login', { p_identifier: identifier, p_password: password });
 
   resetTurnstile('login');
   btn.disabled = false;
   btn.textContent = 'Log in';
 
-  const row = !error && rows ? rows.find(r => r['Password'] === password) : null;
-  if (!row) {
+  if (error) { rpcFail('loginAlert', error); return; }
+  const session = firstRow(data);
+  if (!session || !session.session_token) {
     alertBox('loginAlert', 'Invalid username/email or password.', 'error');
     return;
   }
 
-  if (isPendingRegistration(row)) {
-    pendingUser = { username: row['Username'], email: row['Email'] };
-    await showStep2();
-  } else {
-    setSession(row['Username']);
-    await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
-  }
+  document.getElementById('loginPassword').value = '';
+  setSession(session.session_token);
+  await enterPortal();
 });
+
+// Loads the profile for the stored session token and routes to Step 2 or the dashboard.
+async function enterPortal(){
+  const token = getSession();
+  if (!token) { showView('login'); return null; }
+  const { data: profile, error } = await rpc('student_get_profile', { p_token: token });
+  if (error) {
+    if (!error.handled) expireSession(errText(error, 'Could not load your account. Please log in again.'));
+    return null;
+  }
+  if (!profile) { expireSession('Account not found.'); return null; }
+  if (isPendingRegistration(profile)) await showStep2(profile);
+  else await loadDashboard(profile);
+  return profile;
+}
 
 /* -------------------- SOCIAL LOGIN / CONNECT (Google, Facebook) -------------------- */
 const OAUTH_KEY = 'gps_oauth';
@@ -347,7 +373,8 @@ function startOAuth(state){
 
 function socialErr(error){
   const m = (error && error.message) || '';
-  if (/invalid credentials/i.test(m)) return 'Incorrect password.';
+  // Google-created accounts have no usable password until one is set through Forgot password.
+  if (/invalid[_ ]credentials/i.test(m)) return 'Incorrect password. If you signed up with Google and never set a password, use “Forgot password” on the login page to set one first.';
   if (/already linked/i.test(m)) return 'That account is already connected to a different student account.';
   if (/link expired/i.test(m)) return 'The connection request expired. Please try again.';
   return m || 'Something went wrong. Please try again.';
@@ -374,7 +401,7 @@ function socialAuthErr(error, label){
 async function renderSocialList(){
   const box = document.getElementById('socialList');
   if (!box || !currentUser) return;
-  const { data } = await sb.rpc('list_social_links', { p_username: currentUser.username });
+  const { data } = await rpc('student_list_social_links', { p_token: getSession() });
   const linked = data || [];
   box.innerHTML = Object.entries(SOCIAL_PROVIDERS).map(([key, label]) => {
     const on = linked.includes(key);
@@ -392,16 +419,16 @@ document.getElementById('socialList').addEventListener('click', async (e) => {
   if (!pw) { alertBox('socialAlert', 'Enter your password first to confirm.', 'error'); return; }
 
   if (btn.dataset.on === 'true') {
-    const { error } = await sb.rpc('unlink_social', { p_username: currentUser.username, p_password: pw, p_provider: provider });
-    if (error) { alertBox('socialAlert', socialErr(error), 'error'); return; }
+    const { error } = await rpc('student_unlink_social', { p_token: getSession(), p_password: pw, p_provider: provider });
+    if (error) { if (!error.handled) alertBox('socialAlert', socialErr(error), 'error'); return; }
     document.getElementById('socialPw').value = '';
     alertBox('socialAlert', `${label} disconnected.`, 'success');
     renderSocialList();
     return;
   }
 
-  const { data: token, error } = await sb.rpc('create_link_token', { p_username: currentUser.username, p_password: pw });
-  if (error) { alertBox('socialAlert', socialErr(error), 'error'); return; }
+  const { data: token, error } = await rpc('student_create_link_token', { p_token: getSession(), p_password: pw });
+  if (error) { if (!error.handled) alertBox('socialAlert', socialErr(error), 'error'); return; }
   document.getElementById('socialPw').value = '';
   const res = await startOAuth({ mode: 'link', provider, token });
   if (res.error) { sessionStorage.removeItem(OAUTH_KEY); alertBox('socialAlert', res.error.message, 'error'); }
@@ -419,36 +446,38 @@ async function handleOAuthReturn(st){
   }
 
   if (st.mode === 'link') {
-    const { error } = await sb.rpc('link_social', { p_token: st.token, p_provider: st.provider });
+    // Must run while the Google auth session exists; the link token proves which student asked.
+    const { error } = await sb.rpc('student_link_social', { p_link_token: st.token, p_provider: st.provider });
     await sb.auth.signOut();
-    const username = getSession();
-    if (!username) { showView('login'); return; }
-    const { data: rows } = await sb.from('Clients').select('*').eq('Username', username).limit(1);
-    const row = rows && rows[0];
-    if (!row) { clearSession(); showView('login'); return; }
-    await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
-    alertBox('socialAlert', error ? socialErr(error) : `${label} connected.`, error ? 'error' : 'success');
+    const profile = await enterPortal();
+    if (profile) alertBox('socialAlert', error ? socialErr(error) : `${label} connected.`, error ? 'error' : 'success');
     return;
   }
 
+  // social_register first (creates the Clients row if needed), then mint the portal
+  // session while the Google auth session is still fresh, then drop the auth session.
   const { data: reg, error: regError } = await sb.rpc('social_register', { p_provider: st.provider });
+  const info = firstRow(reg); // test returns a one-row array, live returns {username, is_new}
+  let sessionRes = null;
+  if (!regError && info && info.username) {
+    sessionRes = await sb.rpc('student_session_from_oauth');
+  }
   await sb.auth.signOut();
-  const info = Array.isArray(reg) ? reg[0] : reg;
   if (regError || !info || !info.username) {
     showView('login');
     alertBox('loginAlert', socialAuthErr(regError, label), 'error');
     return;
   }
-  const { data: rows } = await sb.from('Clients').select('*').eq('Username', info.username).limit(1);
-  const row = rows && rows[0];
-  if (!row) { showView('login'); alertBox('loginAlert', 'Account not found.', 'error'); return; }
-  if (isPendingRegistration(row)) {
-    pendingUser = { username: row['Username'], email: row['Email'] };
-    await showStep2();
-    if (info.is_new) alertBox('step2Alert', `Signed in with ${label}. Please complete your details to finish registering.`, 'success');
-  } else {
-    setSession(row['Username']);
-    await loadDashboard({ username: row['Username'], email: row['Email'] }, row);
+  const portal = sessionRes && firstRow(sessionRes.data);
+  if (!portal || !portal.session_token) {
+    showView('login');
+    alertBox('loginAlert', escapeHtml(errText(sessionRes && sessionRes.error, 'Sign-in failed. Please try again.')), 'error');
+    return;
+  }
+  setSession(portal.session_token);
+  const profile = await enterPortal();
+  if (profile && info.is_new && isPendingRegistration(profile)) {
+    alertBox('step2Alert', `Signed in with ${label}. Please complete your details to finish registering.`, 'success');
   }
 }
 
@@ -466,33 +495,41 @@ document.getElementById('otpForm').addEventListener('submit', async (e) => {
 
   const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' });
 
-  btn.disabled = false;
-  btn.textContent = 'Verify code';
-
   if (error) {
-    alertBox('verifyAlert', error.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Verify code';
+    alertBox('verifyAlert', escapeHtml(error.message), 'error');
     return;
   }
 
   const reg = pendingRegistration;
-  pendingRegistration = null;
-
-  if (reg) {
-    const { error: clientsError } = await sb.from('Clients').insert({
-      'Username': reg.username,
-      'Password': reg.password,
-      'Email': reg.email,
-      'Full Name': pendingFullName(reg.username),
-      'Date': new Date().toISOString().slice(0, 10)
-    });
-    if (clientsError) {
-      alertBox('verifyAlert', clientsError.message, 'error');
-      return;
-    }
+  if (!reg) {
+    btn.disabled = false;
+    btn.textContent = 'Verify code';
+    await sb.auth.signOut();
+    showView('register');
+    alertBox('registerAlert', 'Your registration details were cleared. Please fill in the form again.', 'error');
+    return;
   }
 
-  pendingUser = reg ? { username: reg.username, email: reg.email } : { email };
-  await showStep2();
+  // The email comes from the fresh auth session; the password goes straight to the RPC.
+  const { data, error: regError } = await sb.rpc('student_register', { p_username: reg.username, p_password: reg.password });
+  await sb.auth.signOut();
+  btn.disabled = false;
+  btn.textContent = 'Verify code';
+
+  const session = firstRow(data);
+  if (regError || !session || !session.session_token) {
+    pendingRegistration = null;
+    showView('register');
+    rpcFail('registerAlert', regError, 'Could not create your account. Please try again.');
+    return;
+  }
+
+  pendingRegistration = null;
+  document.getElementById('otpCode').value = '';
+  setSession(session.session_token);
+  await enterPortal();
 });
 
 /* -------------------- RESEND VERIFICATION CODE -------------------- */
@@ -547,15 +584,8 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Sending code…';
 
-  // One box: if it has an "@" look up by email, otherwise by username.
-  let query = sb.from('Clients').select('Username, Email');
-  if (identifier.includes('@')) {
-    const safeEmail = identifier.replace(/[\\%_]/g, '\\$&');
-    query = query.ilike('Email', safeEmail).limit(5);
-  } else {
-    query = query.eq('Username', identifier).limit(1);
-  }
-  const { data } = await query;
+  // One box: the RPC looks up by email if it has an "@", otherwise by username.
+  const { data } = await sb.rpc('student_reset_lookup', { p_identifier: identifier });
   const rows = data || [];
 
   if (rows.length > 1) {
@@ -568,15 +598,15 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   const row = rows[0];
   gpsReset = { username: identifier, email: null };
 
-  if (row && row.Email) {
-    const { error } = await sendOtp(row.Email);
+  if (row && row.student_email) {
+    const { error } = await sendOtp(row.student_email);
     if (error) {
       btn.disabled = false;
       btn.textContent = 'Send code';
-      alertBox('forgotAlert', error.message, 'error');
+      alertBox('forgotAlert', escapeHtml(error.message), 'error');
       return;
     }
-    gpsReset = { username: row.Username, email: row.Email };
+    gpsReset = { username: row.student_username, email: row.student_email };
   }
 
   btn.disabled = false;
@@ -628,25 +658,25 @@ document.getElementById('resetForm').addEventListener('submit', async (e) => {
     alertBox('resetAlert', 'Invalid or expired code.', 'error');
     return;
   }
-  await sb.auth.signOut();
 
-  const { error: updateError } = await sb
-    .from('Clients')
-    .update({ 'Password': password })
-    .eq('Username', gpsReset.username);
+  // Must run while the OTP auth session is fresh; returns a new portal session token.
+  const { data: newToken, error: updateError } = await sb.rpc('student_reset_password', {
+    p_username: gpsReset.username, p_new_password: password
+  });
+  await sb.auth.signOut();
 
   btn.disabled = false;
   btn.textContent = 'Update password';
 
-  if (updateError) {
-    alertBox('resetAlert', updateError.message, 'error');
+  if (updateError || !newToken) {
+    rpcFail('resetAlert', updateError, 'Could not update your password. Please try again.');
     return;
   }
 
   gpsReset = { username: '', email: null };
   document.getElementById('resetForm').reset();
-  showView('login');
-  alertBox('loginAlert', 'Password updated. Log in with your new password.', 'success');
+  setSession(newToken);
+  await enterPortal();
 });
 
 document.getElementById('resetResendBtn').addEventListener('click', async () => {
@@ -718,46 +748,66 @@ document.getElementById('cpSaveBtn').addEventListener('click', async () => {
     alertBox('cpAlert', 'Invalid or expired code.', 'error');
     return;
   }
-  await sb.auth.signOut();
 
-  const { error: updateError } = await sb
-    .from('Clients')
-    .update({ 'Password': password })
-    .eq('Username', currentProfile['Username']);
+  // Resetting revokes every old session token, so swap in the new one.
+  const { data: newToken, error: updateError } = await sb.rpc('student_reset_password', {
+    p_username: currentProfile['Username'], p_new_password: password
+  });
+  await sb.auth.signOut();
 
   btn.disabled = false;
   btn.textContent = 'Update password';
 
-  if (updateError) { alertBox('cpAlert', updateError.message, 'error'); return; }
+  if (updateError || !newToken) { rpcFail('cpAlert', updateError, 'Could not update your password. Please try again.'); return; }
 
+  setSession(newToken);
   cpReset();
   alertBox('cpAlert', 'Password updated.', 'success');
 });
 
 /* -------------------- SIGN OUT -------------------- */
-document.getElementById('signOutBtn').addEventListener('click', async () => {
-  clearSession();
-  await sb.auth.signOut();
-  showView('login');
-});
+// Revokes the token server-side (best effort) and clears it locally.
+function signOutStudent(message){
+  const token = getSession();
+  if (token) sb.rpc('student_logout', { p_token: token }).then(() => {}, () => {});
+  sb.auth.signOut();
+  expireSession(message);
+}
+
+document.getElementById('signOutBtn').addEventListener('click', () => signOutStudent());
 
 /* -------------------- DASHBOARD TABS (with mobile hamburger) -------------------- */
 const tabsToggle = document.getElementById('tabsToggle');
 const tabsList = document.getElementById('tabsList');
 
-tabsToggle.addEventListener('click', () => {
-  const isOpen = tabsList.classList.toggle('open');
-  tabsToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+// The burger shows on phones and tablets (see styles.css); on laptops the list is a sidebar.
+function setMenuOpen(open){
+  tabsList.classList.toggle('open', open);
+  tabsToggle.classList.toggle('is-open', open);
+  tabsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  tabsToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+}
+
+tabsToggle.addEventListener('click', () => setMenuOpen(!tabsList.classList.contains('open')));
+// Tap outside the open menu or press Escape to close it.
+document.addEventListener('click', (e) => {
+  if (tabsList.classList.contains('open') && !tabsList.contains(e.target) && !tabsToggle.contains(e.target)) setMenuOpen(false);
 });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && tabsList.classList.contains('open')) { setMenuOpen(false); tabsToggle.focus(); }
+});
+// Rotating a tablet or widening the window back to the sidebar layout drops the open state.
+window.matchMedia('(min-width:1025px)').addEventListener('change', (e) => { if (e.matches) setMenuOpen(false); });
 
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
+    setMenuOpen(false);
+    if (!tab.dataset.tab) return; // Sign out has its own handler
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(tab.dataset.tab).classList.add('active');
-    tabsList.classList.remove('open');
-    tabsToggle.setAttribute('aria-expanded', 'false');
+    window.scrollTo({ top: 0 });
   });
 });
 
@@ -765,7 +815,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 let currentUser = null;
 let currentProfile = null;
 let profileEditMode = false;
-const FIXED_SCHOOL = 'Central Mindanao University';
+let bookingState = null;
 
 let DETAILS_ROWS = [];
 
@@ -776,7 +826,10 @@ async function loadLookups(){
 }
 
 function distinctSchools(){
-  return [FIXED_SCHOOL];
+  const seen = new Set();
+  return DETAILS_ROWS.map(r => (r['Schools'] || '').trim())
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 function distinctColleges(){
   const seen = new Set();
@@ -983,16 +1036,14 @@ function buildFullName(lastName, firstName, mi, suffix, placement){
 }
 
 /* -------------------- LOAD DASHBOARD DATA -------------------- */
-async function loadDashboard(user, clientRow){
-  const [profileRes] = await Promise.all([
-    clientRow ? Promise.resolve({ data: [clientRow] }) :
-      sb.from('Clients').select('*').eq('Username', user.username).limit(1),
-    loadLookups(),
-  ]);
+async function loadDashboard(profile){
+  await loadLookups();
 
-  currentUser = user;
-  currentProfile = (profileRes.data && profileRes.data[0]) || {};
+  currentProfile = profile || {};
+  currentUser = { username: currentProfile['Username'], email: currentProfile['Email'] };
   profileEditMode = false;
+  clearAlert('profileAlert');
+  clearAlert('apptAlert');
 
   const displayName = (currentProfile['First Name'] || '').trim() || currentProfile['Username'] || '';
   document.getElementById('dashGreeting').textContent = displayName ? `Welcome, ${displayName}` : 'Welcome';
@@ -1002,17 +1053,24 @@ async function loadDashboard(user, clientRow){
 
   initDashboardCarousel();
   renderNotices();
-  renderAppointments();
   renderSoftCopies();
   renderSocialList();
   cpReset();
   clearAlert('cpAlert');
+
+  await refreshBooking();
+  // Auto-open the schedule picker once per login session (Skip counts as that once).
+  if (needsBooking() && !sessionStorage.getItem(SCHED_PROMPTED_KEY)) {
+    sessionStorage.setItem(SCHED_PROMPTED_KEY, '1');
+    openSchedule('book');
+  }
 }
 
-/* -------------------- DASHBOARD: carousel of studio output photos -------------------- */
-const CAROUSEL_FILES = ['sample1.jpg', 'sample2.jpg', 'sample3.jpg', 'sample4.jpg', 'sample5.jpg', 'sample6.jpg', 'sample7.jpg', 'sample8.jpg'];
-let dbSlideIndex = 0;
-let dbSlideTimer = null;
+/* -------------------- DASHBOARD: fanned portrait carousel (same as the main page) -------------------- */
+// The active photo sits in the centre, two on each side overlap behind it, and it loops.
+// Positions/scales live in styles.css under [data-slot]; this only decides which card goes where.
+const CAROUSEL_FILES = Array.from({ length: 21 }, (_, i) => `carousel/sample-${String(i + 1).padStart(2, '0')}.webp`);
+const CAROUSEL_AUTOPLAY_MS = 2500; // time each photo stays in the centre
 let dbCarouselBuilt = false;
 
 function initDashboardCarousel(){
@@ -1023,41 +1081,115 @@ function initDashboardCarousel(){
   if (dbCarouselBuilt) return;
   dbCarouselBuilt = true;
 
-  const carousel = document.getElementById('dbCarousel');
-  const dots = document.getElementById('dbDots');
-  carousel.innerHTML = '';
-  dots.innerHTML = '';
+  const viewport = document.getElementById('dbCarousel');
+  const track = document.getElementById('dbGallery');
+  const dotsBox = document.getElementById('dbDots');
+  const count = document.getElementById('dbCount');
+  const total = CAROUSEL_FILES.length;
 
-  CAROUSEL_FILES.forEach((file, i) => {
-    const img = document.createElement('img');
-    img.src = file;
-    img.alt = `Studio output photo ${i + 1}`;
-    if (i === 0) img.classList.add('active');
-    img.onerror = () => img.remove();
-    carousel.appendChild(img);
+  track.innerHTML = CAROUSEL_FILES.map((file, i) =>
+    `<figure class="portrait" data-slide="${i}"><img src="${file}" alt="Graduation portrait sample ${i + 1}" decoding="async" draggable="false"></figure>`).join('');
+  // Load every photo up front (1.1 MB total), as the main page does: lazy-loading would leave
+  // a parked card blank while it slides into view.
+  dotsBox.innerHTML = CAROUSEL_FILES.map((_, i) =>
+    `<button type="button" class="carousel-dot" aria-label="Go to portrait ${i + 1}"></button>`).join('');
+  const cards = [...track.querySelectorAll('.portrait')];
+  const dots = [...dotsBox.querySelectorAll('.carousel-dot')];
+  let index = Math.min(2, total - 1); // start on the third photo, like the main page
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-    const dot = document.createElement('span');
-    if (i === 0) dot.classList.add('active');
-    dot.addEventListener('click', () => showDbSlide(i));
-    dots.appendChild(dot);
+  function paint(){
+    cards.forEach((card, i) => {
+      // Shortest signed distance from the centre photo (wraps around = loop).
+      let d = ((i - index) % total + total) % total;
+      if (d > total / 2) d -= total;
+      const visible = Math.abs(d) <= 2;
+      card.dataset.slot = visible ? String(d) : (d > 0 ? 'out-right' : 'out-left');
+      card.classList.toggle('is-active', d === 0);
+      if (visible) card.removeAttribute('aria-hidden'); else card.setAttribute('aria-hidden', 'true');
+    });
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('is-active', i === index);
+      if (i === index) dot.setAttribute('aria-current', 'true'); else dot.removeAttribute('aria-current');
+    });
+    count.textContent = `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`;
+  }
+  function goTo(next){ index = ((next % total) + total) % total; paint(); scheduleAuto(); }
+  const step = (n) => goTo(index + n);
+
+  // Autoplay pauses on hover/focus/touch, when the browser tab is hidden,
+  // and while the Dashboard panel isn't the one on screen.
+  let autoTimer = null;
+  let paused = false;
+  function stopAuto(){ clearTimeout(autoTimer); autoTimer = null; }
+  function scheduleAuto(){
+    stopAuto();
+    if (paused || reducedMotion.matches || document.hidden || total < 2) return;
+    autoTimer = setTimeout(() => {
+      if (viewport.offsetParent === null) scheduleAuto(); // not on screen: check again later
+      else step(1);
+    }, CAROUSEL_AUTOPLAY_MS);
+  }
+  const pause = () => { paused = true; stopAuto(); };
+  const resume = () => { paused = false; scheduleAuto(); };
+
+  dots.forEach((dot, i) => dot.addEventListener('click', () => goTo(i)));
+  viewport.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    if (e.key === 'Home') { e.preventDefault(); goTo(0); }
+    if (e.key === 'End') { e.preventDefault(); goTo(total - 1); }
   });
 
-  clearInterval(dbSlideTimer);
-  dbSlideTimer = setInterval(() => {
-    const imgs = carousel.querySelectorAll('img');
-    if (imgs.length > 1) showDbSlide((dbSlideIndex + 1) % imgs.length);
-  }, 4000);
-}
+  // Swipe / mouse drag: a short horizontal flick moves one photo.
+  let dragStartX = null;
+  let dragged = false;
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    dragStartX = e.clientX; dragged = false;
+    viewport.classList.add('is-dragging');
+  });
+  window.addEventListener('pointerup', (e) => {
+    if (dragStartX === null) return;
+    const delta = e.clientX - dragStartX;
+    dragStartX = null;
+    viewport.classList.remove('is-dragging');
+    if (Math.abs(delta) > 40) { dragged = true; step(delta < 0 ? 1 : -1); }
+  });
+  window.addEventListener('pointercancel', () => { dragStartX = null; viewport.classList.remove('is-dragging'); });
+  // Tapping a side photo brings it to the centre.
+  viewport.addEventListener('click', (e) => {
+    if (dragged) { dragged = false; return; }
+    const i = cards.indexOf(e.target.closest('.portrait'));
+    if (i >= 0 && i !== index) goTo(i);
+  });
+  // Horizontal trackpad swipes only; a vertical wheel keeps scrolling the page.
+  let wheelCooldown = false;
+  viewport.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || Math.abs(e.deltaX) < 12) return;
+    e.preventDefault();
+    if (wheelCooldown) return;
+    step(e.deltaX > 0 ? 1 : -1);
+    wheelCooldown = true;
+    setTimeout(() => { wheelCooldown = false; }, 450);
+  }, { passive: false });
+  track.querySelectorAll('img').forEach(img => img.addEventListener('error', () => {
+    img.closest('.portrait').classList.add('asset-missing');
+  }, { once: true }));
 
-function showDbSlide(i){
-  const imgs = document.querySelectorAll('#dbCarousel img');
-  const dots = document.querySelectorAll('#dbDots span');
-  if (!imgs.length) return;
-  imgs[dbSlideIndex]?.classList.remove('active');
-  dots[dbSlideIndex]?.classList.remove('active');
-  dbSlideIndex = i % imgs.length;
-  imgs[dbSlideIndex]?.classList.add('active');
-  dots[dbSlideIndex]?.classList.add('active');
+  const shell = viewport.closest('.db-gallery');
+  shell.addEventListener('mouseenter', pause);
+  shell.addEventListener('mouseleave', resume);
+  shell.addEventListener('focusin', pause);
+  shell.addEventListener('focusout', resume);
+  shell.addEventListener('touchstart', pause, { passive: true });
+  shell.addEventListener('touchend', resume, { passive: true });
+  shell.addEventListener('touchcancel', resume, { passive: true });
+  document.addEventListener('visibilitychange', () => { document.hidden ? stopAuto() : scheduleAuto(); });
+  reducedMotion.addEventListener?.('change', scheduleAuto);
+
+  paint();
+  scheduleAuto();
 }
 
 /* -------------------- NOTICE: reads the announcements table -------------------- */
@@ -1075,9 +1207,9 @@ async function renderNotices(){
   const dashList = document.getElementById('dbNoticeList');
   const fullList = document.getElementById('noticeFullList');
 
-  const { data, error } = await sb
+  const { data: rows, error } = await sb
     .from('announcements')
-    .select('*')
+    .select('title, body, is_pinned, created_at, school')
     .order('is_pinned', { ascending: false })
     .order('created_at', { ascending: false });
 
@@ -1087,6 +1219,10 @@ async function renderNotices(){
     fullList.innerHTML = '<div class="stub-empty">Could not load notices.</div>';
     return;
   }
+
+  // school = null means every school; otherwise only that school's students see it.
+  const mySchool = ((currentProfile && currentProfile['School']) || '').trim().toLowerCase();
+  const data = rows.filter(n => !n.school || n.school.trim().toLowerCase() === mySchool);
 
   if (!data.length) {
     dashList.innerHTML = '<div class="stub-empty">No notices yet.</div>';
@@ -1098,49 +1234,420 @@ async function renderNotices(){
   fullList.innerHTML = data.map(n => noticeRowHTML(n, true)).join('');
 }
 
+function showTab(target){
+  setMenuOpen(false);
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === target));
+}
 document.querySelectorAll('[data-goto-tab]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const target = btn.dataset.gotoTab;
-    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === target));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === target));
-  });
+  btn.addEventListener('click', () => showTab(btn.dataset.gotoTab));
 });
 
-/* -------------------- APPOINTMENTS: reads the appointments table -------------------- */
-function apptRowHTML(a){
-  const when = a.scheduled_at
-    ? new Date(a.scheduled_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-    : 'Not yet scheduled';
-  const typeLabel = (a.appointment_type || 'other').replace('_', ' ');
-  return `
-    <div class="notice-row full">
-      <div class="notice-title">${typeLabel[0].toUpperCase()}${typeLabel.slice(1)}
-        <span class="appt-status ${a.status === 'confirmed' ? 'confirmed' : ''}">${a.status}</span>
-      </div>
-      <div class="notice-body">${when}${a.location ? ' · ' + escapeHtml(a.location) : ''}</div>
-      ${a.notes ? `<div class="notice-meta">${escapeHtml(a.notes)}</div>` : ''}
+/* -------------------- PICTORIAL BOOKING: state, reminders, appointments -------------------- */
+const MANILA_TZ = 'Asia/Manila';
+
+function manilaDateKey(iso){
+  // en-CA gives YYYY-MM-DD
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: MANILA_TZ });
+}
+function fmtManilaDate(iso){
+  return new Date(iso).toLocaleDateString('en-US', { timeZone: MANILA_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
+function fmtManilaTime(iso){
+  return new Date(iso).toLocaleTimeString('en-US', { timeZone: MANILA_TZ, hour: 'numeric', minute: '2-digit' });
+}
+function fmtSlotRange(start, end){
+  return fmtManilaTime(start) + (end ? ' – ' + fmtManilaTime(end) : '');
+}
+
+function needsBooking(){
+  return !!(bookingState && bookingState.enabled && !bookingState.booking);
+}
+// No cutoff: students can reschedule or cancel any time until their slot starts.
+function hasBookingStarted(){
+  const b = bookingState && bookingState.booking;
+  return !!b && new Date(b.slot_start).getTime() <= Date.now();
+}
+const BOOKING_STARTED_TEXT = 'Your pictorial schedule has already started, so it can’t be changed online. Please contact the studio.';
+
+// The API returns at most 1000 rows per request; a school with short slots can have more.
+async function fetchAvailability(token){
+  const PAGE = 1000;
+  let all = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await sb.rpc('get_slot_availability', { p_token: token }).range(from, from + PAGE - 1);
+    if (res.error) {
+      if (res.error.message === 'invalid_session') { res.error.handled = true; expireSession(ERROR_TEXT.invalid_session); }
+      return res;
+    }
+    all = all.concat(res.data || []);
+    if (!res.data || res.data.length < PAGE) return { data: all, error: null };
+  }
+}
+
+async function refreshBooking(){
+  const token = getSession();
+  if (!token) return;
+  const { data, error } = await rpc('student_booking_state', { p_token: token });
+  if (error) {
+    if (error.handled) return;
+    console.error(error);
+    bookingState = null;
+  } else {
+    bookingState = data;
+    // Fetch slot times so a pending reschedule can show which slot was requested.
+    const req = data && data.pending_request;
+    if (req && req.requested_slot_id && !slotsCache.some(s => s.slot_id === req.requested_slot_id)) {
+      const res = await fetchAvailability(token);
+      if (!res.error) slotsCache = res.data || [];
+    }
+  }
+  renderBookingReminders();
+  renderAppointments(error);
+}
+
+function renderBookingReminders(){
+  const banner = document.getElementById('dbBookingReminder');
+  const notice = document.getElementById('noticeBookingReminder');
+  if (!needsBooking()) {
+    banner.classList.add('hidden'); banner.innerHTML = '';
+    notice.innerHTML = '';
+    return;
+  }
+  banner.innerHTML = `
+    <div class="db-reminder-text"><strong>Book your pictorial schedule.</strong> Pick a date and time for your graduation pictorial.</div>
+    <button type="button" class="btn btn-primary btn-inline" data-open-schedule>Book now</button>`;
+  banner.classList.remove('hidden');
+  notice.innerHTML = `
+    <div class="notice-row full notice-reminder">
+      <div class="notice-title"><span class="pin">&#128204;</span> Book your pictorial schedule</div>
+      <div class="notice-body">Booking is open for ${escapeHtml(bookingState.school || 'your school')}. Choose your pictorial date and time before slots run out.</div>
+      <div class="notice-meta"><button type="button" class="btn btn-primary btn-inline" data-open-schedule>Book now</button></div>
     </div>`;
 }
 
-async function renderAppointments(){
+function renderAppointments(loadError){
   const list = document.getElementById('appointmentsList');
-  if (!currentProfile?.id) {
-    list.innerHTML = '<div class="stub-empty">Complete your Registration first to see appointments here.</div>';
+  if (loadError) {
+    list.innerHTML = '<div class="stub-empty">Could not load your appointments. Please refresh the page.</div>';
     return;
   }
-  const { data, error } = await sb
-    .from('appointments')
-    .select('*')
-    .eq('student_id', currentProfile.id)
-    .order('scheduled_at');
+  const st = bookingState || {};
+  const b = st.booking;
+  if (!b) {
+    list.innerHTML = st.enabled
+      ? `<div class="notice-row full">
+           <div class="notice-title">Pictorial <span class="appt-status">Not booked</span></div>
+           <div class="notice-body">You haven’t picked your pictorial schedule yet.</div>
+           <div class="notice-meta"><button type="button" class="btn btn-primary btn-inline" data-open-schedule>Book now</button></div>
+         </div>`
+      : '<div class="stub-empty">Pictorial booking isn’t open for your school yet. We’ll post a notice once it opens.</div>';
+    return;
+  }
 
+  const req = st.pending_request;
+  let reqHtml = '';
+  if (req) {
+    const reqWhen = new Date(req.created_at).toLocaleDateString('en-US', { timeZone: MANILA_TZ, month: 'short', day: 'numeric' });
+    let what = req.type === 'cancel' ? 'Cancellation request' : 'Reschedule request';
+    const wanted = req.requested_slot_id && slotsCache.find(s => s.slot_id === req.requested_slot_id);
+    if (wanted) what += ` for ${escapeHtml(fmtManilaDate(wanted.slot_start))}, ${escapeHtml(fmtSlotRange(wanted.slot_start, wanted.slot_end))}`;
+    reqHtml = `
+      <div class="appt-request">
+        <span class="appt-status">Pending</span>
+        ${what} — sent ${escapeHtml(reqWhen)}. The studio will review it soon.
+        <button type="button" class="btn-ghost btn-inline" id="apptWithdrawBtn">Withdraw request</button>
+      </div>`;
+  }
+
+  // Students change their own booking straight away (no staff approval) until the slot starts.
+  const locked = hasBookingStarted();
+  const changeNote = locked
+    ? `<div class="notice-meta">${escapeHtml(BOOKING_STARTED_TEXT)}</div>`
+    : '<div class="notice-meta">You can reschedule or cancel any time before your schedule starts.</div>';
+  const actions = `<div class="appt-actions">
+       ${locked ? '' : `<button type="button" class="btn btn-primary btn-inline" data-request="reschedule">Reschedule</button>
+       <button type="button" class="btn btn-ghost btn-inline" data-request="cancel">Cancel booking</button>`}
+       <button type="button" class="btn btn-ghost btn-inline" id="apptCalendarBtn">Add to calendar</button>
+     </div>`;
+
+  list.innerHTML = `
+    <div class="notice-row full">
+      <div class="notice-title">Pictorial <span class="appt-status confirmed">Booked</span></div>
+      <div class="appt-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
+      <div class="notice-body">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} (Philippine time)${st.school ? ' · ' + escapeHtml(st.school) : ''}</div>
+      ${reqHtml}
+      ${actions}
+      ${changeNote}
+    </div>`;
+}
+
+// Downloads an .ics file so the student can add the pictorial to their phone's calendar.
+function downloadBookingIcs(){
+  const b = bookingState && bookingState.booking;
+  if (!b) return;
+  const stamp = (iso) => new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Grad Pro Studios//Student Portal//EN', 'BEGIN:VEVENT',
+    `UID:${b.id}@gradprostudios`, `DTSTAMP:${stamp(new Date().toISOString())}`,
+    `DTSTART:${stamp(b.slot_start)}`, `DTEND:${stamp(b.slot_end || b.slot_start)}`,
+    'SUMMARY:Graduation pictorial — Grad Pro Studios',
+    `DESCRIPTION:${(bookingState.school || '').replace(/[,;\\]/g, ' ')} graduation pictorial.`,
+    'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Pictorial in 2 hours', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR',
+  ].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  a.download = 'grad-pro-pictorial.ics';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-open-schedule]')) { clearAlert('apptAlert'); openSchedule('book'); return; }
+  const reqBtn = e.target.closest('#appointmentsList [data-request]');
+  if (reqBtn) {
+    clearAlert('apptAlert');
+    if (hasBookingStarted()) { alertBox('apptAlert', escapeHtml(BOOKING_STARTED_TEXT), 'error'); return; }
+    openSchedule(reqBtn.dataset.request);
+  }
+});
+
+document.getElementById('appointmentsList').addEventListener('click', async (e) => {
+  if (e.target.closest('#apptCalendarBtn')) { downloadBookingIcs(); return; }
+  const btn = e.target.closest('#apptWithdrawBtn');
+  if (!btn) return;
+  clearAlert('apptAlert');
+  btn.disabled = true;
+  const { error } = await rpc('withdraw_request', { p_token: getSession() });
+  if (error) { btn.disabled = false; rpcFail('apptAlert', error); return; }
+  alertBox('apptAlert', 'Your request was withdrawn.', 'success');
+  await refreshBooking();
+});
+
+/* -------------------- SCHEDULE MODAL (book / reschedule / cancel) -------------------- */
+let schedMode = 'book';
+let slotsCache = [];
+let slotsByDay = {};
+let schedMonth = null;     // { y, m } with m 0-based
+let schedDay = null;       // 'YYYY-MM-DD' (Manila)
+let schedSlotId = null;
+let schedBusy = false;
+
+const SCHED_COPY = {
+  book: { title: 'Choose your pictorial schedule', confirm: 'Confirm Pictorial Schedule', skip: 'Skip for now' },
+  reschedule: { title: 'Pick your new schedule', confirm: 'Confirm New Schedule', skip: 'Keep my schedule' },
+  cancel: { title: 'Cancel your pictorial booking?', confirm: 'Yes, cancel my booking', skip: 'Keep my schedule' },
+};
+
+function closeSchedule(){
+  const modal = document.getElementById('schedModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  document.body.classList.remove('modal-open');
+}
+
+async function openSchedule(mode){
+  schedMode = mode;
+  schedDay = null;
+  schedSlotId = null;
+  const copy = SCHED_COPY[mode];
+  document.getElementById('schedTitle').textContent = copy.title;
+  document.getElementById('schedConfirm').textContent = copy.confirm;
+  document.getElementById('schedSkip').textContent = copy.skip;
+  document.getElementById('schedPicker').classList.toggle('hidden', mode === 'cancel');
+  const school = (bookingState && bookingState.school) || (currentProfile && currentProfile['School']) || '';
+  const b = bookingState && bookingState.booking;
+  const current = b ? `${fmtManilaDate(b.slot_start)}, ${fmtSlotRange(b.slot_start, b.slot_end)}` : '';
+  document.getElementById('schedSub').textContent =
+    mode === 'cancel' ? `Current schedule: ${current}`
+    : mode === 'reschedule' ? `Current schedule: ${current} · Only open slots are shown. Your change is saved right away.`
+    : (school ? school + ' · ' : '') + 'Times are in Philippine time (Asia/Manila).';
+  document.getElementById('schedCancelNote').classList.toggle('hidden', mode !== 'cancel');
+  clearAlert('schedAlert');
+
+  document.getElementById('schedModal').classList.remove('hidden');
+  document.body.classList.add('modal-open');
+  document.getElementById('schedTitle').focus();
+
+  if (mode === 'cancel') { updateSchedConfirm(); return; }
+  await loadSlots();
+}
+
+async function loadSlots(){
+  document.getElementById('schedDays').innerHTML = '';
+  document.getElementById('schedTimes').innerHTML = '<div class="sched-empty">Loading available slots…</div>';
+  updateSchedConfirm();
+  const { data, error } = await fetchAvailability(getSession());
   if (error) {
-    console.error(error);
-    list.innerHTML = '<div class="stub-empty">Could not load appointments.</div>';
+    rpcFail('schedAlert', error, 'Could not load available slots.');
+    document.getElementById('schedTimes').innerHTML = '';
     return;
   }
-  list.innerHTML = data.length ? data.map(apptRowHTML).join('') : '<div class="stub-empty">No appointments scheduled yet.</div>';
+  const current = bookingState && bookingState.booking && bookingState.booking.slot_id;
+  slotsCache = data || [];
+  const pickable = slotsCache.filter(s => !(schedMode === 'reschedule' && s.slot_id === current));
+  slotsByDay = {};
+  pickable.forEach(s => { (slotsByDay[manilaDateKey(s.slot_start)] = slotsByDay[manilaDateKey(s.slot_start)] || []).push(s); });
+
+  if (schedDay && !dayOpen(schedDay)) { schedDay = null; schedSlotId = null; }
+  if (schedSlotId && !pickable.some(s => s.slot_id === schedSlotId && s.slots_left > 0)) schedSlotId = null;
+
+  const days = Object.keys(slotsByDay).sort();
+  const firstOpen = days.find(dayOpen) || days[0];
+  if (!schedMonth || !days.length || !schedDay) {
+    const anchor = schedDay || firstOpen;
+    if (anchor) schedMonth = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 };
+    else { const t = manilaDateKey(new Date().toISOString()); schedMonth = { y: Number(t.slice(0, 4)), m: Number(t.slice(5, 7)) - 1 }; }
+  }
+  renderCalendar();
+  renderTimes();
 }
+
+function dayOpen(key){
+  return (slotsByDay[key] || []).some(s => s.slots_left > 0);
+}
+
+function renderCalendar(){
+  const { y, m } = schedMonth;
+  document.getElementById('schedMonth').textContent =
+    new Date(Date.UTC(y, m, 1)).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', year: 'numeric' });
+
+  const keys = Object.keys(slotsByDay).sort();
+  const monthKey = (yy, mm) => yy * 12 + mm;
+  const minM = keys.length ? monthKey(Number(keys[0].slice(0, 4)), Number(keys[0].slice(5, 7)) - 1) : monthKey(y, m);
+  const maxKey = keys[keys.length - 1];
+  const maxM = keys.length ? monthKey(Number(maxKey.slice(0, 4)), Number(maxKey.slice(5, 7)) - 1) : monthKey(y, m);
+  document.getElementById('schedPrev').disabled = monthKey(y, m) <= minM;
+  document.getElementById('schedNext').disabled = monthKey(y, m) >= maxM;
+
+  const lead = new Date(Date.UTC(y, m, 1)).getUTCDay();
+  const count = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  let html = '';
+  for (let i = 0; i < lead; i++) html += '<span class="sched-day blank" aria-hidden="true"></span>';
+  for (let d = 1; d <= count; d++) {
+    const key = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const has = !!slotsByDay[key];
+    const open = dayOpen(key);
+    const cls = ['sched-day', open ? 'open' : 'disabled', has && !open ? 'full' : '', key === schedDay ? 'selected' : ''].join(' ');
+    const label = new Date(Date.UTC(y, m, d)).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' })
+      + (open ? '' : has ? ' (full)' : ' (no slots)');
+    html += `<button type="button" class="${cls}" data-day="${key}" ${open ? '' : 'disabled'} aria-label="${label}" aria-pressed="${key === schedDay}">${d}</button>`;
+  }
+  document.getElementById('schedDays').innerHTML = html;
+}
+
+function renderTimes(){
+  const box = document.getElementById('schedTimes');
+  const head = document.getElementById('schedDateLabel');
+  if (!Object.keys(slotsByDay).length) {
+    head.textContent = 'No open slots';
+    box.innerHTML = '<div class="sched-empty">There are no open pictorial slots right now. Please check back later.</div>';
+    updateSchedConfirm();
+    return;
+  }
+  if (!schedDay) {
+    head.textContent = 'Select a date';
+    box.innerHTML = '<div class="sched-empty">Pick an available date on the calendar to see the times.</div>';
+    updateSchedConfirm();
+    return;
+  }
+  head.textContent = fmtManilaDate(slotsByDay[schedDay][0].slot_start);
+  box.innerHTML = slotsByDay[schedDay].map(s => {
+    const full = s.slots_left <= 0;
+    const sel = s.slot_id === schedSlotId;
+    return `<button type="button" class="sched-time${sel ? ' selected' : ''}" data-slot="${s.slot_id}" ${full ? 'disabled' : ''} aria-pressed="${sel}">
+      <span>${escapeHtml(fmtSlotRange(s.slot_start, s.slot_end))}</span>
+      <span class="sched-left">${full ? 'Full' : s.slots_left + ' left'}</span>
+    </button>`;
+  }).join('');
+  updateSchedConfirm();
+}
+
+function updateSchedConfirm(){
+  document.getElementById('schedConfirm').disabled = schedBusy || (schedMode !== 'cancel' && !schedSlotId);
+}
+
+document.getElementById('schedDays').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-day]');
+  if (!btn || btn.disabled) return;
+  schedDay = btn.dataset.day;
+  schedSlotId = null;
+  clearAlert('schedAlert');
+  renderCalendar();
+  renderTimes();
+});
+document.getElementById('schedTimes').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-slot]');
+  if (!btn || btn.disabled) return;
+  schedSlotId = btn.dataset.slot;
+  renderTimes();
+});
+document.getElementById('schedPrev').addEventListener('click', () => {
+  const d = new Date(Date.UTC(schedMonth.y, schedMonth.m - 1, 1));
+  schedMonth = { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+  renderCalendar();
+});
+document.getElementById('schedNext').addEventListener('click', () => {
+  const d = new Date(Date.UTC(schedMonth.y, schedMonth.m + 1, 1));
+  schedMonth = { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+  renderCalendar();
+});
+
+function skipSchedule(){
+  if (schedBusy) return;
+  if (schedMode === 'book') sessionStorage.setItem(SCHED_PROMPTED_KEY, '1');
+  closeSchedule();
+}
+document.getElementById('schedSkip').addEventListener('click', skipSchedule);
+document.getElementById('schedClose').addEventListener('click', skipSchedule);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !document.getElementById('schedModal').classList.contains('hidden')) skipSchedule();
+});
+
+document.getElementById('schedConfirm').addEventListener('click', async () => {
+  clearAlert('schedAlert');
+  const btn = document.getElementById('schedConfirm');
+  const idle = btn.textContent;
+  schedBusy = true;
+  updateSchedConfirm();
+  btn.innerHTML = '<span class="spinner"></span>Saving…';
+
+  const token = getSession();
+  const res = schedMode === 'book' ? await rpc('book_slot', { p_token: token, p_slot_id: schedSlotId })
+    : schedMode === 'reschedule' ? await rpc('student_reschedule', { p_token: token, p_slot_id: schedSlotId })
+    : await rpc('student_cancel_booking', { p_token: token });
+
+  schedBusy = false;
+  btn.textContent = idle;
+  updateSchedConfirm();
+
+  if (res.error) {
+    if (res.error.handled) return;
+    const code = res.error.message;
+    if (code === 'slot_full' || code === 'slot_unavailable' || code === 'slot_not_found' || code === 'same_slot') {
+      schedSlotId = null;
+      await loadSlots();
+      alertBox('schedAlert', escapeHtml(ERROR_TEXT[code]), 'error');
+      return;
+    }
+    if (code === 'booking_started' || code === 'past_cutoff') { alertBox('schedAlert', escapeHtml(BOOKING_STARTED_TEXT), 'error'); await refreshBooking(); return; }
+    rpcFail('schedAlert', res.error);
+    if (code === 'already_booked' || code === 'request_pending' || code === 'no_active_booking' || code === 'booking_closed') await refreshBooking();
+    return;
+  }
+
+  const mode = schedMode;
+  closeSchedule();
+  await refreshBooking();
+  showTab('tab-appointments');
+  if (mode === 'cancel') {
+    alertBox('apptAlert', 'Your pictorial booking was cancelled. You can book a new schedule any time while booking is open.', 'success');
+  } else {
+    const b = res.data || {};
+    alertBox('apptAlert', `Your pictorial ${mode === 'book' ? 'is booked for' : 'is now moved to'} <strong>${escapeHtml(fmtManilaDate(b.slot_start))}, ${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))}</strong>.`, 'success');
+  }
+});
 
 /* -------------------- RENDER PROFILE GRID -------------------- */
 /* -------------------- RENDER PROFILE GRID -------------------- */
@@ -1216,7 +1723,7 @@ function renderProfileGrid(){
     </div>
     <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_School">School<span class="req-star">*</span></label>
-      <input type="text" id="edit_School" value="${escapeHtml(FIXED_SCHOOL)}" readonly>
+      <input type="text" id="edit_School" value="${escapeHtml(p['School'] || '')}" autocomplete="off" placeholder="Type to search your school"${bookingState && bookingState.booking ? ' readonly title="Your school can’t be changed while you have a pictorial booking."' : ''}>
       <div class="suggest-list" id="edit_SchoolList"></div>
     </div>
     <div class="profile-field span-2 suggest-wrap">
@@ -1308,7 +1815,7 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   const middleInitial = val('edit_MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('edit_Suffix'));
   const gender = val('edit_Gender');
-  const school = FIXED_SCHOOL;
+  const school = val('edit_School');
   const contact = val('edit_Contact');
 
   if (!lastName) { alertBox('profileAlert', 'Last name is required.', 'error'); return; }
@@ -1338,48 +1845,47 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Saving…';
 
-  const { data, error } = await sb
-    .from('Clients')
-    .update(updates)
-    .eq('Username', currentProfile['Username'])
-    .select()
-    .single();
+  const { data, error } = await rpc('student_save_profile', { p_token: getSession(), p_profile: updates });
 
   btn.disabled = false;
   btn.textContent = 'Save changes';
 
   if (error) {
-    if (error.code === '23505' || /duplicate key|Clients_pkey/i.test(error.message)) {
+    if (error.message === 'duplicate_full_name') {
       alertBox('profileAlert',
-        `"${fullName}" is already registered under a different account. Add a Middle Initial or Suffix to tell your record apart, or contact the studio for help.`,
+        `"${escapeHtml(fullName)}" is already registered under a different account. Add a Middle Initial or Suffix to tell your record apart, or contact the studio for help.`,
         'error');
       return;
     }
-    alertBox('profileAlert', error.message, 'error');
+    rpcFail('profileAlert', error);
     return;
   }
 
+  const schoolChanged = (currentProfile['School'] || '').trim().toLowerCase() !== (data['School'] || '').trim().toLowerCase();
   currentProfile = data;
+  currentUser = { username: data['Username'], email: data['Email'] };
   profileEditMode = false;
   renderProfileGrid();
   alertBox('profileAlert', 'Details updated.', 'success');
 
   const dn = (currentProfile['First Name'] || '').trim() || currentProfile['Username'] || '';
   document.getElementById('dashGreeting').textContent = dn ? `Welcome, ${dn}` : 'Welcome';
+  if (schoolChanged) { renderNotices(); refreshBooking(); }
 });
 
 /* -------------------- STEP 2 — student info registration -------------------- */
 let step2TypeaheadWired = false;
 
-async function showStep2(){
+async function showStep2(profile){
   await loadLookups();
+  currentProfile = profile || {};
+  currentUser = { username: currentProfile['Username'], email: currentProfile['Email'] };
 
   ['s2LastName','s2FirstName','s2MiddleInitial','s2Suffix',
-   's2Gender','s2College','s2Course','s2Major',
+   's2Gender','s2School','s2College','s2Course','s2Major',
    's2Contact','s2Socials'].forEach(id => {
     document.getElementById(id).value = '';
   });
-  document.getElementById('s2School').value = FIXED_SCHOOL;
   const noneRadio = document.querySelector('input[name="s2SuffixPlacement"][value="none"]');
   if (noneRadio) noneRadio.checked = true;
   document.getElementById('s2NamePreview').textContent = '—';
@@ -1426,18 +1932,13 @@ function updateStep2Preview(){
 document.querySelectorAll('input[name="s2SuffixPlacement"]').forEach(r =>
   r.addEventListener('change', updateStep2Preview));
 
-document.getElementById('step2Cancel').addEventListener('click', async () => {
-  clearSession();
-  await sb.auth.signOut();
-  pendingUser = null;
-  showView('login');
-});
+document.getElementById('step2Cancel').addEventListener('click', () => signOutStudent());
 
 document.getElementById('step2Form').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('step2Alert');
 
-  if (!pendingUser) { showView('login'); return; }
+  if (!getSession()) { showView('login'); return; }
 
   const val = (id) => document.getElementById(id).value.trim();
   const lastName = smartName(val('s2LastName'));
@@ -1445,7 +1946,7 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   const middleInitial = val('s2MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('s2Suffix'));
   const gender = val('s2Gender');
-  const school = FIXED_SCHOOL;
+  const school = val('s2School');
   const contact = val('s2Contact');
 
   if (!lastName) { alertBox('step2Alert', 'Please enter Last Name.', 'error'); return; }
@@ -1461,9 +1962,9 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Saving…';
 
-  const { data, error } = await sb
-    .from('Clients')
-    .update({
+  const { data, error } = await rpc('student_save_profile', {
+    p_token: getSession(),
+    p_profile: {
       'Last Name': lastName,
       'First Name': firstName,
       'Middle Initial': middleInitial,
@@ -1475,29 +1976,26 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
       'Contact .': contact,
       'Socials': val('s2Socials'),
       'Full Name': fullName,
-    })
-    .eq('Username', pendingUser.username)
-    .select()
-    .single();
+    }
+  });
 
   btn.disabled = false;
   btn.textContent = 'Next';
 
   if (error) {
-    if (error.code === '23505' || /duplicate key|Clients_pkey/i.test(error.message)) {
+    if (error.message === 'duplicate_full_name') {
       alertBox('step2Alert',
-        `"${fullName}" is already registered in our system. If this is you and you already have an account, please log in instead. If someone else shares this exact name, add a Middle Initial or Suffix to tell your record apart, or contact the studio for help.`,
+        `"${escapeHtml(fullName)}" is already registered in our system. If this is you and you already have an account, please log in instead. If someone else shares this exact name, add a Middle Initial or Suffix to tell your record apart, or contact the studio for help.`,
         'error');
       return;
     }
-    alertBox('step2Alert', error.message, 'error');
+    rpcFail('step2Alert', error);
     return;
   }
 
-  const user = pendingUser;
-  pendingUser = null;
-  if (data['Username']) setSession(data['Username']);
-  await loadDashboard(user, data);
+  // loadDashboard opens the schedule modal if this school has booking enabled and
+  // the student has no booking yet; "Skip for now" just leaves them on the dashboard.
+  await loadDashboard(data);
 });
 
 /* -------------------- BOOTSTRAP: check session on load -------------------- */
@@ -1510,20 +2008,8 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
     if (st) { await handleOAuthReturn(st); return; }
   }
 
-  const username = getSession();
-
-  if (username) {
-    const { data: rows } = await sb.from('Clients').select('*').eq('Username', username).limit(1);
-    const clientRow = rows && rows[0];
-    if (!clientRow) {
-      clearSession();
-      showView('login');
-    } else if (isPendingRegistration(clientRow)) {
-      pendingUser = { username: clientRow['Username'], email: clientRow['Email'] };
-      await showStep2();
-    } else {
-      await loadDashboard({ username: clientRow['Username'], email: clientRow['Email'] }, clientRow);
-    }
+  if (getSession()) {
+    await enterPortal();
   } else {
     const params = new URLSearchParams(window.location.search);
     showView(params.get('view') === 'register' ? 'register' : 'login');
@@ -1537,11 +2023,7 @@ let inactivityTimer = null;
 function resetInactivityTimer(){
   clearTimeout(inactivityTimer);
   inactivityTimer = setTimeout(() => {
-    if (getSession()) {
-      clearSession();
-      showView('login');
-      alertBox('loginAlert', 'You were logged out due to inactivity.', 'error');
-    }
+    if (getSession()) signOutStudent('You were logged out due to inactivity.');
   }, INACTIVITY_LIMIT_MS);
 }
 
@@ -1587,22 +2069,4 @@ function renderSoftCopies(){
   const p = currentProfile || {};
   const items = [['RAW photos', p.raw_folder_url, p.raw_expires_at], ['Edited photos', p.edited_folder_url, p.edited_expires_at]].filter(it => it[2]);
   list.innerHTML = items.length ? items.map(it => softCopyRowHTML(it[0], it[1], it[2])).join('') : '<div class="stub-empty">No photos have been delivered yet.</div>';
-}
-
-/* Optional: one empty folder per registered student of a school, named by Full Name, inside RAW_UPLOAD/<School>. Safe to run again. */
-function createFolders(){
-  const SCHOOL = 'Adventist College of Technology'; // change per school
-  const start = Date.now();
-  const root = DriveApp.getFolderById(CONFIG.UPLOAD_ID);
-  const sf = root.getFoldersByName(SCHOOL);
-  const parent = sf.hasNext() ? sf.next() : root.createFolder(SCHOOL);
-  const rows = sb_('GET', 'Clients?School=eq.' + encodeURIComponent(SCHOOL) + '&' + encodeURIComponent('Full Name') + '=not.like.' + encodeURIComponent('PENDING*') + '&select=' + encodeURIComponent('"Full Name"') + '&order=' + encodeURIComponent('Full Name') + '&limit=1000');
-  let made = 0;
-  for (const r of rows) {
-    if (Date.now() - start > 280000) { Logger.log('Time limit reached. Run again to continue.'); break; }
-    const fname = String(r['Full Name']).replace(/[\/\\]/g, ' ').trim();
-    if (!fname || parent.getFoldersByName(fname).hasNext()) continue;
-    parent.createFolder(fname); made++;
-  }
-  Logger.log('Created ' + made + ' folders in ' + SCHOOL);
 }

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Grad Pro Studios — Admin</title>
+<meta name="theme-color" content="#ffffff">
+<script>
+// Saved theme (or the device's setting) before first paint; same key as the student portal.
+(function(){
+  var t = null;
+  try { t = localStorage.getItem('gps-theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
+<link rel="stylesheet" href="admin-styles.css">
+<link rel="icon" type="image/png" href="GPS.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- STAFF LOGIN                                                   -->
+<!-- ============================================================ -->
+<div class="login-shell hidden" id="loginShell">
+  <button type="button" class="theme-toggle floating" data-theme-toggle aria-label="Switch theme"></button>
+  <div class="login-card">
+    <img src="GPS.png" alt="Grad Pro Studios" class="login-logo">
+    <div class="eyebrow">Staff Portal</div>
+    <h1 class="login-title">Staff sign in</h1>
+    <p class="login-sub">Internal access only. Ask your admin if you don't have staff credentials yet.</p>
+
+    <div id="loginAlert"></div>
+
+    <form id="loginForm">
+      <div class="field">
+        <label for="staffEmail">Email</label>
+        <input type="email" id="staffEmail" required autocomplete="username" placeholder="you@email.com">
+      </div>
+      <div class="field">
+        <label for="staffPassword">Password</label>
+        <input type="password" id="staffPassword" required autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <button type="submit" class="btn btn-primary" id="loginSubmit">Sign in</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ADMIN DASHBOARD                                               -->
+<!-- ============================================================ -->
+<div class="dash hidden" id="dash">
+  <aside class="sidebar">
+    <div class="side-top">
+      <img src="GPS.png" alt="Grad Pro Studios" class="side-logo">
+      <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch theme"></button>
+    </div>
+    <div class="side-label">Admin</div>
+
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false"><span></span><span></span><span></span></button>
+
+    <nav class="nav" id="nav">
+      <button class="nav-btn active" data-page="settings">Slot Settings</button>
+      <button class="nav-btn" data-page="slots">Slots</button>
+      <button class="nav-btn" data-page="bookings">Bookings</button>
+      <button class="nav-btn" data-page="requests">Student Activity <span class="nav-badge hidden" id="reqBadge"></span></button>
+      <button class="nav-btn" data-page="unbooked">Unbooked Students</button>
+      <button class="nav-btn" data-page="announcements">Announcements</button>
+      <div class="side-foot">
+        <div class="staff-tag">Signed in as <strong id="staffName">—</strong></div>
+        <button class="nav-btn signout" id="signOutBtn">Sign out</button>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="main">
+
+    <!-- ===== SLOT SETTINGS ===== -->
+    <section class="page active" id="page-settings">
+      <div class="page-head">
+        <div><div class="eyebrow">Pictorial booking</div><h1 class="page-title">Slot Settings</h1></div>
+      </div>
+      <p class="page-note">Set each school's booking window, then generate its time slots. Students only see slots for their own school, and only while booking is enabled. Times are Philippine time (Asia/Manila).</p>
+
+      <div class="card">
+        <div id="settingsAlert"></div>
+        <div class="field">
+          <label for="setSchool">School</label>
+          <select id="setSchool"></select>
+        </div>
+
+        <form id="settingsForm">
+          <label class="switch-row"><input type="checkbox" id="setEnabled"> <span>Booking enabled (students can see and book slots)</span></label>
+
+          <div class="grid-2">
+            <div class="field"><label for="setStart">Start date</label><input type="date" id="setStart" required></div>
+            <div class="field"><label for="setEnd">End date</label><input type="date" id="setEnd" required></div>
+          </div>
+
+          <div class="field">
+            <label>Days of the week</label>
+            <div class="dow-row" id="setDays">
+              <label><input type="checkbox" value="1" checked> Mon</label>
+              <label><input type="checkbox" value="2" checked> Tue</label>
+              <label><input type="checkbox" value="3" checked> Wed</label>
+              <label><input type="checkbox" value="4" checked> Thu</label>
+              <label><input type="checkbox" value="5" checked> Fri</label>
+              <label><input type="checkbox" value="6"> Sat</label>
+              <label><input type="checkbox" value="7"> Sun</label>
+            </div>
+          </div>
+
+          <div class="grid-4">
+            <div class="field"><label for="setOpen">Opens</label><input type="time" id="setOpen" value="08:00" required></div>
+            <div class="field"><label for="setClose">Closes</label><input type="time" id="setClose" value="17:00" required></div>
+            <div class="field"><label for="setLunchStart">Lunch start (optional)</label><input type="time" id="setLunchStart" value="12:00"></div>
+            <div class="field"><label for="setLunchEnd">Lunch end (optional)</label><input type="time" id="setLunchEnd" value="13:00"></div>
+          </div>
+
+          <div class="field">
+            <label for="blockFrom">Blocked dates (holidays, school no-duty days — no pictorial)</label>
+            <div class="block-add">
+              <input type="date" id="blockFrom" aria-label="Blocked from">
+              <span class="muted">to</span>
+              <input type="date" id="blockTo" aria-label="Blocked until (optional)">
+              <button type="button" class="btn btn-ghost btn-inline btn-sm" id="blockAddBtn">Add</button>
+            </div>
+            <div class="chip-list" id="blockList"></div>
+            <p class="hint">Leave "to" empty for a single day. Blocked days get no slots, and existing slots on those days are closed when you save.</p>
+          </div>
+
+          <div class="grid-total">
+            <div class="field">
+              <label for="setTotal">Total students (whole school)</label>
+              <input type="number" id="setTotal" min="1" max="100000" step="1" placeholder="e.g. 1750" required>
+            </div>
+            <div class="field">
+              <label>How the students are split (1-hour slots)</label>
+              <div class="preview-box" id="setPreview">—</div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary btn-inline" id="saveSettingsBtn">Save settings</button>
+            <button type="button" class="btn btn-ghost btn-inline" id="generateBtn">Generate slots</button>
+            <button type="button" class="btn btn-ghost btn-inline" id="rebuildBtn">Rebuild slots</button>
+          </div>
+          <p class="hint">Every slot is 1 hour (e.g. 8–9 AM, 9–10 AM). The total is divided across all the hours in the schedule; saving also updates the number of students per hour on existing upcoming slots. <strong>Generate</strong> adds slots that don't exist yet. <strong>Rebuild</strong> removes upcoming slots nobody has booked and makes them again from these settings (use it after changing hours or days); booked students are never removed.</p>
+        </form>
+      </div>
+
+      <h2 class="section-title">Schools with booking settings</h2>
+      <div class="table-wrap"><table class="table" id="settingsTable"></table></div>
+    </section>
+
+    <!-- ===== SLOTS ===== -->
+    <section class="page" id="page-slots">
+      <div class="page-head">
+        <div><div class="eyebrow">Pictorial booking</div><h1 class="page-title">Slots</h1></div>
+      </div>
+      <div class="filters">
+        <div class="field"><label for="slotSchool">School</label><select id="slotSchool"></select></div>
+        <div class="field"><label for="slotDate">Jump to date</label><input type="date" id="slotDate"></div>
+        <button type="button" class="btn btn-ghost btn-inline" id="slotTodayBtn">Today</button>
+        <button type="button" class="btn btn-ghost btn-inline" id="slotLoadBtn">Refresh</button>
+      </div>
+      <div id="slotsAlert"></div>
+      <div class="day-strip-wrap">
+        <button type="button" class="strip-nav" id="slotPrevDay" aria-label="Previous day">&#8249;</button>
+        <div class="day-strip" id="slotDayStrip" role="listbox" aria-label="Days with slots"></div>
+        <button type="button" class="strip-nav" id="slotNextDay" aria-label="Next day">&#8250;</button>
+      </div>
+      <div id="slotsSummary" class="summary"></div>
+      <div id="slotsList"></div>
+    </section>
+
+    <!-- ===== BOOKINGS ===== -->
+    <section class="page" id="page-bookings">
+      <div class="page-head">
+        <div><div class="eyebrow">Pictorial booking</div><h1 class="page-title">Bookings</h1></div>
+        <button type="button" class="btn btn-ghost btn-inline" id="bookingsCsvBtn">Download CSV</button>
+      </div>
+      <div class="filters">
+        <div class="field"><label for="bkSchool">School</label><select id="bkSchool"></select></div>
+        <div class="field"><label for="bkFrom">From</label><input type="date" id="bkFrom"></div>
+        <div class="field"><label for="bkTo">To</label><input type="date" id="bkTo"></div>
+        <div class="field"><label for="bkStatus">Status</label>
+          <select id="bkStatus">
+            <option value="booked">Booked</option>
+            <option value="completed">Completed</option>
+            <option value="no_show">No-show</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div class="field"><label for="bkSearch">Search</label><input type="search" id="bkSearch" placeholder="Name or username"></div>
+        <button type="button" class="btn btn-primary btn-inline" id="bkLoadBtn">Show bookings</button>
+      </div>
+      <div id="bookingsAlert"></div>
+      <div id="bookingsSummary" class="summary"></div>
+      <div class="table-wrap"><table class="table" id="bookingsTable"></table></div>
+    </section>
+
+    <!-- ===== REQUESTS ===== -->
+    <section class="page" id="page-requests">
+      <div class="page-head">
+        <div><div class="eyebrow">Pictorial booking</div><h1 class="page-title">Student Activity</h1></div>
+        <button type="button" class="btn btn-ghost btn-inline" id="actCsvBtn">Download CSV</button>
+      </div>
+      <p class="page-note">Students book, reschedule and cancel by themselves (no approval needed) any time before their schedule starts. Every change shows up here, newest first.</p>
+      <div class="filters">
+        <div class="field"><label for="actSchool">School</label><select id="actSchool"></select></div>
+        <div class="field"><label for="actType">Type</label>
+          <select id="actType">
+            <option value="">All changes</option>
+            <option value="booked">Booked</option>
+            <option value="rescheduled">Rescheduled</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="field"><label for="actSearch">Search</label><input type="search" id="actSearch" placeholder="Name or username"></div>
+        <button type="button" class="btn btn-primary btn-inline" id="reqLoadBtn">Refresh</button>
+      </div>
+      <div id="requestsAlert"></div>
+      <div id="activityList"></div>
+
+      <!-- Old approval-style requests (from before self-service). Shown only while any are pending. -->
+      <div id="legacyRequests" class="hidden">
+        <h2 class="section-title">Older requests waiting for a decision</h2>
+        <select id="reqStatus" class="hidden"><option value="pending" selected>Pending</option></select>
+        <div id="requestsList"></div>
+      </div>
+    </section>
+
+    <!-- ===== UNBOOKED ===== -->
+    <section class="page" id="page-unbooked">
+      <div class="page-head">
+        <div><div class="eyebrow">Pictorial booking</div><h1 class="page-title">Unbooked Students</h1></div>
+        <button type="button" class="btn btn-ghost btn-inline" id="unbookedCsvBtn">Download CSV</button>
+      </div>
+      <p class="page-note">Registered students (Step 2 finished) of a school who have no active pictorial booking.</p>
+      <div class="filters">
+        <div class="field"><label for="ubSchool">School</label><select id="ubSchool"></select></div>
+        <button type="button" class="btn btn-primary btn-inline" id="ubLoadBtn">Show students</button>
+      </div>
+      <div id="unbookedAlert"></div>
+      <div id="unbookedSummary" class="summary"></div>
+      <div class="table-wrap"><table class="table" id="unbookedTable"></table></div>
+    </section>
+
+    <!-- ===== ANNOUNCEMENTS ===== -->
+    <section class="page" id="page-announcements">
+      <div class="page-head">
+        <div><div class="eyebrow">Student portal</div><h1 class="page-title">Announcements</h1></div>
+      </div>
+      <div class="card">
+        <div id="annAlert"></div>
+        <form id="annForm">
+          <div class="field"><label for="annTitle">Title</label><input type="text" id="annTitle" required maxlength="150"></div>
+          <div class="field"><label for="annBody">Message</label><textarea id="annBody" rows="4" required maxlength="4000"></textarea></div>
+          <div class="grid-2">
+            <div class="field"><label for="annSchool">Show to</label><select id="annSchool"></select></div>
+            <label class="switch-row"><input type="checkbox" id="annPinned"> <span>Pin to the top</span></label>
+          </div>
+          <div class="actions"><button type="submit" class="btn btn-primary btn-inline" id="annSubmit">Post announcement</button></div>
+        </form>
+      </div>
+      <div class="filters">
+        <div class="field"><label for="annFilter">Filter</label><select id="annFilter"></select></div>
+      </div>
+      <div id="annList"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ---------------- Shared dialog (confirm / note / move booking) ---------------- -->
+<div class="overlay hidden" id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+  <div class="dialog-card">
+    <h2 class="dialog-title" id="dialogTitle" tabindex="-1"></h2>
+    <div class="dialog-body" id="dialogBody"></div>
+    <div id="dialogAlert"></div>
+    <div class="actions">
+      <button type="button" class="btn btn-ghost btn-inline" id="dialogCancel">Cancel</button>
+      <button type="button" class="btn btn-primary btn-inline" id="dialogOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<script src="theme.js"></script>
+<script>window.SB_AUTH_STORAGE_KEY = 'gps-staff-auth';</script>
+<script src="supabase-client.js"></script>
+<script src="admin-script.js"></script>
+</body>
+</html>
