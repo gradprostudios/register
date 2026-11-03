@@ -127,6 +127,13 @@ $('dialogOk').addEventListener('click', async () => {
 /* -------------------- auth -------------------- */
 let currentStaff = null;
 
+// Cloudflare Turnstile: with CAPTCHA on in Supabase, password sign-in needs this token.
+const TURNSTILE_SITE_KEY = "0x4AAAAAAD4Y5yYW8B-1flNT";
+let staffCaptcha;
+window.onloadTurnstileCallback = function(){
+  if (typeof turnstile !== 'undefined') staffCaptcha = turnstile.render('#turnstileStaff', { sitekey: TURNSTILE_SITE_KEY });
+};
+
 async function checkStaff(){
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return null;
@@ -152,9 +159,15 @@ $('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearAlert('loginAlert');
   const btn = $('loginSubmit');
+  const captchaToken = staffCaptcha !== undefined ? turnstile.getResponse(staffCaptcha) : undefined;
+  if (staffCaptcha !== undefined && !captchaToken) { alertBox('loginAlert', 'Please complete the security verification below.', 'error'); return; }
   setBusy(btn, true, 'Signing in…');
-  const { error } = await sb.auth.signInWithPassword({ email: $('staffEmail').value.trim(), password: $('staffPassword').value });
-  if (error) { setBusy(btn, false); alertBox('loginAlert', 'Invalid email or password.', 'error'); return; }
+  const { error } = await sb.auth.signInWithPassword({
+    email: $('staffEmail').value.trim(), password: $('staffPassword').value,
+    ...(captchaToken ? { options: { captchaToken } } : {}),
+  });
+  if (staffCaptcha !== undefined) turnstile.reset(staffCaptcha); // tokens are single-use
+  if (error) { setBusy(btn, false); alertBox('loginAlert', /captcha/i.test(error.message) ? 'Security verification failed. Please try again.' : 'Invalid email or password.', 'error'); return; }
   const staff = await checkStaff();
   setBusy(btn, false);
   $('staffPassword').value = '';

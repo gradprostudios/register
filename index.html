@@ -17,7 +17,7 @@
 </script>
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" type="image/png" href="GPS.png">
-<!-- <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" defer></script> -->
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   
 <!-- Vercel Web Analytics -->
@@ -205,6 +205,7 @@
           <label for="forgotIdentifier">Username or Email</label>
           <input type="text" id="forgotIdentifier" required autocomplete="username" placeholder="e.g. mariasantos or maria@email.com">
         </div>
+        <div class="field" id="turnstileForgot"></div>
         <button type="submit" class="btn btn-primary" id="forgotSubmit">Send code</button>
       </form>
 
@@ -246,6 +247,7 @@
         <button type="submit" class="btn btn-primary" id="resetSubmit">Update password</button>
       </form>
 
+      <div class="field" id="turnstileResetResend" style="margin-top:12px;"></div>
       <button type="button" class="btn btn-ghost" id="resetResendBtn" style="margin-top:12px;">Resend verification code</button>
       <button class="btn btn-ghost" id="backToLoginFromReset" style="margin-top:12px;">Back to login</button>
     </div>
@@ -464,7 +466,7 @@
         <div class="field"><label for="socialPw">Confirm your password to connect or disconnect</label><input type="password" id="socialPw" autocomplete="current-password" placeholder="••••••••"></div>
         <div id="socialList"></div>
       </div>
-      <div class="stub-card" style="margin-top:18px;"><div class="stub-card-header"><div><h3>Change password</h3></div></div><div id="cpAlert"></div><p>We will send a 6-digit verification code to your registered email before you can set a new password.</p><div id="cpStep1"><button type="button" class="btn btn-primary btn-inline" id="cpSendBtn">Send verification code</button></div><div id="cpStep2" class="hidden"><div class="field"><label for="cpOtp">Verification code</label><input type="text" id="cpOtp" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code"></div><div class="field"><label for="cpNew">New password</label><input type="password" id="cpNew" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div><div class="field"><label for="cpConfirm">Confirm new password</label><input type="password" id="cpConfirm" autocomplete="new-password" minlength="8" placeholder="Re-enter your new password"></div><div class="profile-edit-actions"><button type="button" class="btn btn-primary" id="cpSaveBtn">Update password</button><button type="button" class="btn btn-ghost" id="cpResendBtn">Resend code</button><button type="button" class="btn btn-ghost" id="cpCancelBtn">Cancel</button></div></div></div>
+      <div class="stub-card" style="margin-top:18px;"><div class="stub-card-header"><div><h3>Change password</h3></div></div><div id="cpAlert"></div><div class="field" id="turnstileCp"></div><p>We will send a 6-digit verification code to your registered email before you can set a new password.</p><div id="cpStep1"><button type="button" class="btn btn-primary btn-inline" id="cpSendBtn">Send verification code</button></div><div id="cpStep2" class="hidden"><div class="field"><label for="cpOtp">Verification code</label><input type="text" id="cpOtp" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="123456" autocomplete="one-time-code"></div><div class="field"><label for="cpNew">New password</label><input type="password" id="cpNew" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div><div class="field"><label for="cpConfirm">Confirm new password</label><input type="password" id="cpConfirm" autocomplete="new-password" minlength="8" placeholder="Re-enter your new password"></div><div class="profile-edit-actions"><button type="button" class="btn btn-primary" id="cpSaveBtn">Update password</button><button type="button" class="btn btn-ghost" id="cpResendBtn">Resend code</button><button type="button" class="btn btn-ghost" id="cpCancelBtn">Cancel</button></div></div></div>
       </div>
 
       <!-- UPLOADED IMAGES (under construction) -->

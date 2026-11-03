@@ -10,7 +10,11 @@ window.onloadTurnstileCallback = function(){
   turnstileWidgets.login = turnstile.render('#turnstileLogin', { sitekey: TURNSTILE_SITE_KEY });
   turnstileWidgets.register = turnstile.render('#turnstileRegister', { sitekey: TURNSTILE_SITE_KEY });
   turnstileWidgets.resend = turnstile.render('#turnstileResend', { sitekey: TURNSTILE_SITE_KEY });
+  turnstileWidgets.forgot = turnstile.render('#turnstileForgot', { sitekey: TURNSTILE_SITE_KEY });
+  turnstileWidgets.resetResend = turnstile.render('#turnstileResetResend', { sitekey: TURNSTILE_SITE_KEY });
+  turnstileWidgets.cp = turnstile.render('#turnstileCp', { sitekey: TURNSTILE_SITE_KEY });
 };
+const CAPTCHA_TEXT = 'Please complete the security verification before continuing.';
 
 function turnstileAvailable(key){
   return typeof turnstile !== 'undefined' && turnstileWidgets[key] !== undefined;
@@ -571,8 +575,13 @@ function maskEmail(email){
   const u = parts[0];
   return (u.length <= 2 ? u[0] : u.slice(0, 2)) + '***@' + parts[1];
 }
-function sendOtp(email){
-  return sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+// With CAPTCHA on in Supabase, every email-code request needs the widget token for its form.
+async function sendOtp(email, widgetKey){
+  const captchaToken = getTurnstileToken(widgetKey);
+  if (turnstileAvailable(widgetKey) && !captchaToken) return { error: { message: CAPTCHA_TEXT } };
+  const res = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true, ...(captchaToken ? { captchaToken } : {}) } });
+  resetTurnstile(widgetKey);
+  return res;
 }
 
 document.getElementById('forgotForm').addEventListener('submit', async (e) => {
@@ -580,6 +589,11 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   clearAlert('forgotAlert');
 
   const identifier = document.getElementById('forgotIdentifier').value.trim();
+  // Checked before the lookup so the captcha prompt never hints whether the account exists.
+  if (turnstileAvailable('forgot') && !getTurnstileToken('forgot')) {
+    alertBox('forgotAlert', CAPTCHA_TEXT, 'error');
+    return;
+  }
   const btn = document.getElementById('forgotSubmit');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Sending code…';
@@ -599,7 +613,7 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
   gpsReset = { username: identifier, email: null };
 
   if (row && row.student_email) {
-    const { error } = await sendOtp(row.student_email);
+    const { error } = await sendOtp(row.student_email, 'forgot');
     if (error) {
       btn.disabled = false;
       btn.textContent = 'Send code';
@@ -688,7 +702,7 @@ document.getElementById('resetResendBtn').addEventListener('click', async () => 
   const btn = document.getElementById('resetResendBtn');
   btn.disabled = true;
   btn.textContent = 'Sending…';
-  const { error } = await sendOtp(gpsReset.email);
+  const { error } = await sendOtp(gpsReset.email, 'resetResend');
   btn.disabled = false;
   btn.textContent = 'Resend verification code';
   if (error) alertBox('resetAlert', error.message, 'error');
@@ -710,7 +724,7 @@ async function cpSendCode(btn, idleText){
   if (!email) { alertBox('cpAlert', 'No email found on this account.', 'error'); return false; }
   btn.disabled = true;
   btn.textContent = 'Sending…';
-  const { error } = await sendOtp(email);
+  const { error } = await sendOtp(email, 'cp');
   btn.disabled = false;
   btn.textContent = idleText;
   if (error) { alertBox('cpAlert', error.message, 'error'); return false; }
