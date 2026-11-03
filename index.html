@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Grad Pro Studios — Student Portal</title>
+<meta name="theme-color" content="#ffffff">
+<script>
+// Apply the saved theme (or the device's light/dark setting) before first paint, so dark mode
+// never flashes white. Same key as the main page, so a choice made there carries over.
+(function(){
+  var t = null;
+  try { t = localStorage.getItem('gps-theme'); } catch (e) {}
+  if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+})();
+</script>
 <link rel="stylesheet" href="styles.css">
 <link rel="icon" type="image/png" href="GPS.png">
 <!-- <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" defer></script> -->
@@ -22,6 +33,7 @@
 <!-- AUTH SHELL: login / register / verify-gate / forgot-password   -->
 <!-- ============================================================ -->
 <div class="shell" id="authShell">
+  <button type="button" class="theme-toggle floating" data-theme-toggle aria-label="Switch theme"></button>
   <div class="panel-left">
 
     <!-- BRAND LOGO -->
@@ -246,6 +258,7 @@
 <!-- just the form. Shown right after email verification succeeds. -->
 <!-- ============================================================ -->
 <div class="step2-page hidden" id="step2Shell">
+  <button type="button" class="theme-toggle floating" data-theme-toggle aria-label="Switch theme"></button>
   <div class="step2-card">
     <h2 class="step2-heading">STUDENT INFORMATION</h2>
 
@@ -291,7 +304,7 @@
 
       <div class="field suggest-wrap">
         <label for="s2School">School<span class="req-star">*</span></label>
-        <input type="text" id="s2School" required value="Central Mindanao University" readonly>
+        <input type="text" id="s2School" required autocomplete="off" placeholder="Type to search your school">
         <div class="suggest-list" id="s2SchoolList"></div>
       </div>
 
@@ -348,7 +361,9 @@
         <img src="GPS.png" alt="Grad Pro Studios" class="side-logo">
       </div>
 
-      <button class="tabs-toggle" id="tabsToggle" aria-label="Toggle sections menu" aria-expanded="false">
+      <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch theme"></button>
+
+      <button class="tabs-toggle" id="tabsToggle" aria-label="Open menu" aria-expanded="false" aria-controls="tabsList">
         <span></span><span></span><span></span>
       </button>
 
@@ -368,13 +383,21 @@
       <!-- DASHBOARD -->
       <div class="tab-panel active" id="tab-dashboard">
         <div class="db-banner">
-          <div class="db-carousel" id="dbCarousel"></div>
           <div class="db-banner-text">
             <span class="eyebrow" id="dbDate"></span>
             <h1 id="dashGreeting">Welcome</h1>
             <p id="dashSub">Always stay updated in your student portal.</p>
+            <div class="db-reminder hidden" id="dbBookingReminder"></div>
           </div>
-          <div class="db-dots" id="dbDots"></div>
+          <!-- Fanned portrait carousel, same as the main page (built by initDashboardCarousel) -->
+          <div class="db-gallery">
+            <div class="gallery-topline"><span>THE GRAD PRO COLLECTION</span></div>
+            <div class="carousel-viewport" id="dbCarousel" tabindex="0" role="region" aria-roledescription="carousel" aria-label="Graduation portraits. Use left and right arrow keys to browse.">
+              <div class="portrait-gallery" id="dbGallery"></div>
+            </div>
+            <div class="carousel-pagination" id="dbDots" role="group" aria-label="Choose graduation portrait"></div>
+            <div class="gallery-controls"><span>SWIPE OR TAP A PHOTO TO EXPLORE</span><span class="carousel-count" id="dbCount" aria-live="polite"></span></div>
+          </div>
         </div>
 
         <h3 class="db-section-title">Finance</h3>
@@ -456,16 +479,60 @@
       <!-- NOTICE (functional) -->
       <div class="tab-panel" id="tab-notice">
         <h3 class="db-section-title">All Notices</h3>
+        <div id="noticeBookingReminder"></div>
         <div id="noticeFullList"><div class="stub-empty">Loading…</div></div>
       </div>
 
       <!-- APPOINTMENTS -->
       <div class="tab-panel" id="tab-appointments">
         <h3 class="db-section-title">Your Appointments</h3>
+        <div id="apptAlert"></div>
         <div id="appointmentsList"><div class="stub-empty">Loading…</div></div>
       </div>
 
     </main>
+  </div>
+</div>
+
+<!-- ---------------- PICTORIAL SCHEDULE MODAL (book / reschedule / cancel) ---------------- -->
+<div class="sched-overlay hidden" id="schedModal" role="dialog" aria-modal="true" aria-labelledby="schedTitle">
+  <div class="sched-card">
+    <div class="sched-head">
+      <div>
+        <div class="eyebrow sched-eyebrow">Pictorial Schedule</div>
+        <h2 class="sched-title" id="schedTitle" tabindex="-1">Choose your pictorial schedule</h2>
+        <p class="sched-sub" id="schedSub"></p>
+      </div>
+      <button type="button" class="sched-close" id="schedClose" aria-label="Close">&times;</button>
+    </div>
+
+    <div id="schedAlert"></div>
+
+    <div class="sched-body" id="schedPicker">
+      <div class="sched-cal">
+        <div class="sched-cal-nav">
+          <button type="button" class="sched-nav-btn" id="schedPrev" aria-label="Previous month">&#8249;</button>
+          <span class="sched-month" id="schedMonth"></span>
+          <button type="button" class="sched-nav-btn" id="schedNext" aria-label="Next month">&#8250;</button>
+        </div>
+        <div class="sched-weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+        <div class="sched-days" id="schedDays"></div>
+        <div class="sched-legend"><span><i class="lg-open"></i>Available</span><span><i class="lg-sel"></i>Selected</span><span><i class="lg-off"></i>Full / no slots</span></div>
+      </div>
+      <div class="sched-times">
+        <div class="sched-times-head" id="schedDateLabel">Select a date</div>
+        <div class="sched-time-list" id="schedTimes"></div>
+      </div>
+    </div>
+
+    <div class="sched-empty hidden" id="schedCancelNote">
+      Your slot will be released to other students right away. You can book a new schedule any time while booking is open for your school.
+    </div>
+
+    <div class="sched-actions">
+      <button type="button" class="btn btn-ghost" id="schedSkip">Skip for now</button>
+      <button type="button" class="btn btn-primary" id="schedConfirm" disabled>Confirm Pictorial Schedule</button>
+    </div>
   </div>
 </div>
 
@@ -479,6 +546,8 @@
   <button class="btn btn-primary cookie-accept" id="cookieAcceptBtn">Accept</button>
 </div>
 
+<script src="theme.js"></script>
+<script src="supabase-client.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
