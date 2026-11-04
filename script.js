@@ -1286,6 +1286,15 @@ function fmtSlotRange(start, end){
   return fmtManilaTime(start) + (end ? ' – ' + fmtManilaTime(end) : '');
 }
 
+// Students must arrive this many minutes before their pictorial schedule.
+const ARRIVE_EARLY_MIN = 30;
+function arriveByTime(iso){
+  return fmtManilaTime(new Date(new Date(iso).getTime() - ARRIVE_EARLY_MIN * 60000).toISOString());
+}
+function arriveByHtml(iso){
+  return `<span class="arrive-ic" aria-hidden="true">&#9201;</span> Please arrive by <strong>${escapeHtml(arriveByTime(iso))}</strong>, ${ARRIVE_EARLY_MIN} minutes before your <span class="nowrap">${escapeHtml(fmtManilaTime(iso))}</span> schedule.`;
+}
+
 function needsBooking(){
   return !!(bookingState && bookingState.enabled && !bookingState.booking);
 }
@@ -1363,6 +1372,7 @@ function renderDashboardPictorial(loadError){
       <div class="dbx-kick">Your pictorial</div>
       <div class="dbx-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
       <div class="dbx-time">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} · Philippine time</div>
+      ${locked ? '' : `<div class="arrive-note">${arriveByHtml(b.slot_start)}</div>`}
       <div class="dbx-chips">${chip(when, !locked)}${schoolChip}${chip(st.pending_request ? 'Request pending' : 'Booked')}</div>
       <div class="dbx-acts">
         <button type="button" class="btn btn-primary" id="dbCalBtn">Add to calendar</button>
@@ -1460,6 +1470,7 @@ function renderAppointments(loadError){
       <div class="notice-title">Pictorial <span class="appt-status confirmed">Booked</span></div>
       <div class="appt-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
       <div class="notice-body">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} (Philippine time)${st.school ? ' · ' + escapeHtml(st.school) : ''}</div>
+      ${locked ? '' : `<div class="arrive-note">${arriveByHtml(b.slot_start)}</div>`}
       ${reqHtml}
       ${actions}
       ${changeNote}
@@ -1476,7 +1487,7 @@ function downloadBookingIcs(){
     `UID:${b.id}@gradprostudios`, `DTSTAMP:${stamp(new Date().toISOString())}`,
     `DTSTART:${stamp(b.slot_start)}`, `DTEND:${stamp(b.slot_end || b.slot_start)}`,
     'SUMMARY:Graduation pictorial — Grad Pro Studios',
-    `DESCRIPTION:${(bookingState.school || '').replace(/[,;\\]/g, ' ')} graduation pictorial.`,
+    `DESCRIPTION:${(bookingState.school || '').replace(/[,;\\]/g, ' ')} graduation pictorial. Please arrive by ${arriveByTime(b.slot_start)} (${ARRIVE_EARLY_MIN} minutes early).`,
     'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Pictorial in 2 hours', 'END:VALARM',
     'END:VEVENT', 'END:VCALENDAR',
   ].join('\r\n');
@@ -1653,6 +1664,11 @@ function renderTimes(){
 
 function updateSchedConfirm(){
   document.getElementById('schedConfirm').disabled = schedBusy || (schedMode !== 'cancel' && !schedSlotId);
+  // Arrival reminder under the times as soon as a time is picked.
+  const note = document.getElementById('schedArriveNote');
+  const slot = schedMode !== 'cancel' && schedSlotId && schedDay && (slotsByDay[schedDay] || []).find(s => s.slot_id === schedSlotId);
+  note.innerHTML = slot ? arriveByHtml(slot.slot_start) : '';
+  note.classList.toggle('hidden', !slot);
 }
 
 document.getElementById('schedDays').addEventListener('click', (e) => {
@@ -1742,10 +1758,10 @@ document.getElementById('schedConfirm').addEventListener('click', async () => {
 });
 
 // What students see after booking. Edit this list to match the studio's own reminders.
+// The arrival time (ARRIVE_EARLY_MIN before the schedule) is shown on its own above this list.
 const BEFORE_PICTORIAL = [
   'Wear your complete school uniform',
   'Bring your school ID',
-  'Arrive 15 minutes before your schedule (Philippine time)',
 ];
 let lastBookedMode = 'book';
 function showBookingDone(mode, b){
@@ -1753,6 +1769,7 @@ function showBookingDone(mode, b){
   document.getElementById('schedDoneTitle').textContent = mode === 'book' ? 'You’re booked!' : 'Schedule updated';
   document.getElementById('schedDoneSub').textContent = mode === 'book' ? 'Your pictorial schedule is saved.' : 'Your pictorial is moved to the new schedule.';
   document.getElementById('schedDoneWhen').textContent = b.slot_start ? fmtManilaDate(b.slot_start) + ' · ' + fmtSlotRange(b.slot_start, b.slot_end) : '';
+  document.getElementById('schedDoneArrive').innerHTML = b.slot_start ? arriveByHtml(b.slot_start) : '';
   document.getElementById('schedDoneBring').innerHTML = BEFORE_PICTORIAL.map(t => '<li>' + escapeHtml(t) + '</li>').join('');
   document.getElementById('schedDone').classList.remove('hidden');
   document.querySelector('.sched-card').classList.add('is-done');
