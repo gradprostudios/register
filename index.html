@@ -381,13 +381,13 @@
       </button>
 
       <div class="tabs" id="tabsList">
-        <button class="tab active" data-tab="tab-dashboard">Dashboard</button>
-        <button class="tab" data-tab="tab-payment">Payment Info</button>
-        <button class="tab" data-tab="tab-registration">Student Info</button>
-        <button class="tab" data-tab="tab-images">Uploaded Images</button>
-        <button class="tab" data-tab="tab-notice">Notice</button>
-        <button class="tab" data-tab="tab-appointments">Appointments</button>
-        <button class="tab signout-menu" id="signOutBtn">Sign out</button>
+        <button class="tab active" data-tab="tab-dashboard"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Dashboard</button>
+        <button class="tab" data-tab="tab-appointments"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Appointments</button>
+        <button class="tab" data-tab="tab-notice"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a3 3 0 0 1 0 6"/></svg>Notice</button>
+        <button class="tab" data-tab="tab-registration"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Student Info</button>
+        <button class="tab" data-tab="tab-payment"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M16 13h2M3 10h18"/></svg>Payment<span class="tab-soon">Soon</span></button>
+        <button class="tab" data-tab="tab-images"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>Photos<span class="tab-soon">Soon</span></button>
+        <button class="tab signout-menu" id="signOutBtn"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/></svg>Sign out</button>
       </div>
     </aside>
 
@@ -395,53 +395,30 @@
 
       <!-- DASHBOARD -->
       <div class="tab-panel active" id="tab-dashboard">
-        <div class="db-banner">
-          <div class="db-banner-text">
-            <span class="eyebrow" id="dbDate"></span>
-            <h1 id="dashGreeting">Welcome</h1>
-            <p id="dashSub">Always stay updated in your student portal.</p>
-            <div class="db-reminder hidden" id="dbBookingReminder"></div>
-          </div>
-          <!-- Fanned portrait carousel, same as the main page (built by initDashboardCarousel) -->
-          <div class="db-gallery">
-            <div class="gallery-topline"><span>THE GRAD PRO COLLECTION</span></div>
-            <div class="carousel-viewport" id="dbCarousel" tabindex="0" role="region" aria-roledescription="carousel" aria-label="Graduation portraits. Use left and right arrow keys to browse.">
-              <div class="portrait-gallery" id="dbGallery"></div>
-            </div>
-            <div class="carousel-pagination" id="dbDots" role="group" aria-label="Choose graduation portrait"></div>
-            <div class="gallery-controls"><span>SWIPE OR TAP A PHOTO TO EXPLORE</span><span class="carousel-count" id="dbCount" aria-live="polite"></span></div>
-          </div>
+        <div class="dbx-head">
+          <span class="eyebrow" id="dbDate"></span>
+          <h1 id="dashGreeting">Welcome</h1>
+          <p id="dashSub">Always stay updated in your student portal.</p>
         </div>
 
-        <h3 class="db-section-title">Finance</h3>
-        <div class="db-finance-grid">
-          <div class="db-finance-card">
-            <div class="db-finance-amount" id="dbTotalPayable">₱0</div>
-            <div class="db-finance-label">Total Payable</div>
-          </div>
-          <div class="db-finance-card highlight">
-            <div class="db-finance-amount" id="dbTotalPaid">₱0</div>
-            <div class="db-finance-label">Total Paid</div>
-          </div>
-          <div class="db-finance-card">
-            <div class="db-finance-amount" id="dbOthers">₱0</div>
-            <div class="db-finance-label">Others</div>
-          </div>
-        </div>
+        <div class="dbx-row">
+          <!-- Your pictorial: booked date, or Book now (filled by renderDashboardPictorial) -->
+          <section class="dbx-card dbx-pict" id="dbPictorial" aria-label="Your pictorial"><div class="stub-empty">Loading…</div></section>
 
-         <div class="db-columns">
-          <!-- <div class="stub-card">
-            <h3>Studio Team</h3>
-            <div class="db-team-row" id="dbTeamRow"></div>
-          </div> -->
-          <div class="stub-card">
-            <div class="stub-card-header"> 
-              <h3>Daily Notice</h3>
-              <button class="btn-ghost btn-inline" data-goto-tab="tab-notice">See all</button>
+          <section class="dbx-card" aria-labelledby="dbNoticeTitle">
+            <div class="dbx-card-head">
+              <h3 id="dbNoticeTitle">Daily notice</h3>
+              <button type="button" class="dbx-link" data-goto-tab="tab-notice">See all</button>
             </div>
             <div id="dbNoticeList"><div class="stub-empty">Loading…</div></div>
-          </div>
-        </div>  
+          </section>
+        </div>
+
+        <!-- Payment: no amounts are posted yet, so a note instead of ₱0 cards -->
+        <section class="dbx-card dbx-pay">
+          <span class="dbx-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M16 13h2M3 10h18"/></svg></span>
+          <div><strong>Payment details</strong> will appear here once the studio posts your package and balance.</div>
+        </section>
       </div>
 
       <!-- PAYMENT INFO (under construction) -->

@@ -1193,7 +1193,7 @@ async function loadDashboard(profile){
   renderProfileGrid();
   showDashboard();
 
-  initDashboardCarousel();
+  renderDbDate();
   renderNotices();
   renderSoftCopies();
   renderSocialList();
@@ -1208,130 +1208,11 @@ async function loadDashboard(profile){
   }
 }
 
-/* -------------------- DASHBOARD: fanned portrait carousel (same as the main page) -------------------- */
-// The active photo sits in the centre, two on each side overlap behind it, and it loops.
-// Positions/scales live in styles.css under [data-slot]; this only decides which card goes where.
-const CAROUSEL_FILES = Array.from({ length: 21 }, (_, i) => `carousel/sample-${String(i + 1).padStart(2, '0')}.webp`);
-const CAROUSEL_AUTOPLAY_MS = 2500; // time each photo stays in the centre
-let dbCarouselBuilt = false;
-
-function initDashboardCarousel(){
+/* -------------------- DASHBOARD -------------------- */
+function renderDbDate(){
   document.getElementById('dbDate').textContent = new Date().toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric'
+    timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric'
   });
-
-  if (dbCarouselBuilt) return;
-  dbCarouselBuilt = true;
-
-  const viewport = document.getElementById('dbCarousel');
-  const track = document.getElementById('dbGallery');
-  const dotsBox = document.getElementById('dbDots');
-  const count = document.getElementById('dbCount');
-  const total = CAROUSEL_FILES.length;
-
-  track.innerHTML = CAROUSEL_FILES.map((file, i) =>
-    `<figure class="portrait" data-slide="${i}"><img src="${file}" alt="Graduation portrait sample ${i + 1}" decoding="async" draggable="false"></figure>`).join('');
-  // Load every photo up front (1.1 MB total), as the main page does: lazy-loading would leave
-  // a parked card blank while it slides into view.
-  dotsBox.innerHTML = CAROUSEL_FILES.map((_, i) =>
-    `<button type="button" class="carousel-dot" aria-label="Go to portrait ${i + 1}"></button>`).join('');
-  const cards = [...track.querySelectorAll('.portrait')];
-  const dots = [...dotsBox.querySelectorAll('.carousel-dot')];
-  let index = Math.min(2, total - 1); // start on the third photo, like the main page
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-
-  function paint(){
-    cards.forEach((card, i) => {
-      // Shortest signed distance from the centre photo (wraps around = loop).
-      let d = ((i - index) % total + total) % total;
-      if (d > total / 2) d -= total;
-      const visible = Math.abs(d) <= 2;
-      card.dataset.slot = visible ? String(d) : (d > 0 ? 'out-right' : 'out-left');
-      card.classList.toggle('is-active', d === 0);
-      if (visible) card.removeAttribute('aria-hidden'); else card.setAttribute('aria-hidden', 'true');
-    });
-    dots.forEach((dot, i) => {
-      dot.classList.toggle('is-active', i === index);
-      if (i === index) dot.setAttribute('aria-current', 'true'); else dot.removeAttribute('aria-current');
-    });
-    count.textContent = `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`;
-  }
-  function goTo(next){ index = ((next % total) + total) % total; paint(); scheduleAuto(); }
-  const step = (n) => goTo(index + n);
-
-  // Autoplay pauses on hover/focus/touch, when the browser tab is hidden,
-  // and while the Dashboard panel isn't the one on screen.
-  let autoTimer = null;
-  let paused = false;
-  function stopAuto(){ clearTimeout(autoTimer); autoTimer = null; }
-  function scheduleAuto(){
-    stopAuto();
-    if (paused || reducedMotion.matches || document.hidden || total < 2) return;
-    autoTimer = setTimeout(() => {
-      if (viewport.offsetParent === null) scheduleAuto(); // not on screen: check again later
-      else step(1);
-    }, CAROUSEL_AUTOPLAY_MS);
-  }
-  const pause = () => { paused = true; stopAuto(); };
-  const resume = () => { paused = false; scheduleAuto(); };
-
-  dots.forEach((dot, i) => dot.addEventListener('click', () => goTo(i)));
-  viewport.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
-    if (e.key === 'Home') { e.preventDefault(); goTo(0); }
-    if (e.key === 'End') { e.preventDefault(); goTo(total - 1); }
-  });
-
-  // Swipe / mouse drag: a short horizontal flick moves one photo.
-  let dragStartX = null;
-  let dragged = false;
-  viewport.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    dragStartX = e.clientX; dragged = false;
-    viewport.classList.add('is-dragging');
-  });
-  window.addEventListener('pointerup', (e) => {
-    if (dragStartX === null) return;
-    const delta = e.clientX - dragStartX;
-    dragStartX = null;
-    viewport.classList.remove('is-dragging');
-    if (Math.abs(delta) > 40) { dragged = true; step(delta < 0 ? 1 : -1); }
-  });
-  window.addEventListener('pointercancel', () => { dragStartX = null; viewport.classList.remove('is-dragging'); });
-  // Tapping a side photo brings it to the centre.
-  viewport.addEventListener('click', (e) => {
-    if (dragged) { dragged = false; return; }
-    const i = cards.indexOf(e.target.closest('.portrait'));
-    if (i >= 0 && i !== index) goTo(i);
-  });
-  // Horizontal trackpad swipes only; a vertical wheel keeps scrolling the page.
-  let wheelCooldown = false;
-  viewport.addEventListener('wheel', (e) => {
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || Math.abs(e.deltaX) < 12) return;
-    e.preventDefault();
-    if (wheelCooldown) return;
-    step(e.deltaX > 0 ? 1 : -1);
-    wheelCooldown = true;
-    setTimeout(() => { wheelCooldown = false; }, 450);
-  }, { passive: false });
-  track.querySelectorAll('img').forEach(img => img.addEventListener('error', () => {
-    img.closest('.portrait').classList.add('asset-missing');
-  }, { once: true }));
-
-  const shell = viewport.closest('.db-gallery');
-  shell.addEventListener('mouseenter', pause);
-  shell.addEventListener('mouseleave', resume);
-  shell.addEventListener('focusin', pause);
-  shell.addEventListener('focusout', resume);
-  shell.addEventListener('touchstart', pause, { passive: true });
-  shell.addEventListener('touchend', resume, { passive: true });
-  shell.addEventListener('touchcancel', resume, { passive: true });
-  document.addEventListener('visibilitychange', () => { document.hidden ? stopAuto() : scheduleAuto(); });
-  reducedMotion.addEventListener?.('change', scheduleAuto);
-
-  paint();
-  scheduleAuto();
 }
 
 /* -------------------- NOTICE: reads the announcements table -------------------- */
@@ -1344,6 +1225,9 @@ function noticeRowHTML(n, full){
       <div class="notice-meta">${date}</div>
     </div>`;
 }
+
+const DB_NOTICE_EMPTY = `<div class="dbx-empty"><span class="dbx-ic red" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></span>
+  <div><strong>No new notices</strong>The studio posts reminders for your school here, like what to wear and schedule changes.</div></div>`;
 
 async function renderNotices(){
   const dashList = document.getElementById('dbNoticeList');
@@ -1367,7 +1251,7 @@ async function renderNotices(){
   const data = rows.filter(n => !n.school || n.school.trim().toLowerCase() === mySchool);
 
   if (!data.length) {
-    dashList.innerHTML = '<div class="stub-empty">No notices yet.</div>';
+    dashList.innerHTML = DB_NOTICE_EMPTY;
     fullList.innerHTML = '<div class="stub-empty">No notices yet.</div>';
     return;
   }
@@ -1445,21 +1329,79 @@ async function refreshBooking(){
     }
   }
   renderBookingReminders();
+  renderDashboardPictorial(error);
   renderAppointments(error);
 }
 
+// Whole days from today to the pictorial, both counted as Philippine calendar dates.
+function daysUntilManila(iso){
+  const toUtc = (key) => { const [y, m, d] = key.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((toUtc(manilaDateKey(iso)) - toUtc(manilaDateKey(new Date().toISOString()))) / 86400000);
+}
+
+// The "Your pictorial" card at the top of the dashboard.
+function renderDashboardPictorial(loadError){
+  const box = document.getElementById('dbPictorial');
+  const sub = document.getElementById('dashSub');
+  const st = bookingState || {};
+  const b = st.booking;
+  const school = st.school || (currentProfile && currentProfile['School']) || '';
+  const chip = (text, red) => `<span class="dbx-chip${red ? ' red' : ''}">${escapeHtml(text)}</span>`;
+  const schoolChip = school ? chip(school) : '';
+
+  if (loadError || !bookingState) {
+    sub.textContent = 'Always stay updated in your student portal.';
+    box.innerHTML = '<div class="dbx-kick">Your pictorial</div><p class="dbx-text">We couldn’t load your schedule. Please refresh the page.</p>';
+    return;
+  }
+  if (b) {
+    const days = daysUntilManila(b.slot_start);
+    const when = hasBookingStarted() ? 'Done' : days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`;
+    const locked = hasBookingStarted();
+    sub.textContent = locked ? 'Thanks for coming to your pictorial.' : 'You’re all set. Here’s what’s next.';
+    box.innerHTML = `
+      <div class="dbx-kick">Your pictorial</div>
+      <div class="dbx-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
+      <div class="dbx-time">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} · Philippine time</div>
+      <div class="dbx-chips">${chip(when, !locked)}${schoolChip}${chip(st.pending_request ? 'Request pending' : 'Booked')}</div>
+      <div class="dbx-acts">
+        <button type="button" class="btn btn-primary" id="dbCalBtn">Add to calendar</button>
+        ${locked ? '' : '<button type="button" class="btn btn-ghost" id="dbReschedBtn">Reschedule</button>'}
+      </div>`;
+    return;
+  }
+  if (st.enabled) {
+    sub.textContent = 'One step left: book your pictorial schedule.';
+    box.innerHTML = `
+      <div class="dbx-kick">Your pictorial</div>
+      <div class="dbx-when">Not booked yet</div>
+      <p class="dbx-text">Pick a date and time for your graduation pictorial. Slots are first come, first served.</p>
+      <div class="dbx-chips">${schoolChip}${chip('Booking open', true)}</div>
+      <div class="dbx-acts"><button type="button" class="btn btn-primary" data-open-schedule>Book now</button></div>`;
+    return;
+  }
+  sub.textContent = 'Always stay updated in your student portal.';
+  box.innerHTML = `
+    <div class="dbx-kick">Your pictorial</div>
+    <div class="dbx-when">Booking opens soon</div>
+    <p class="dbx-text">Pictorial booking isn’t open for your school yet. We’ll post a notice here once it opens.</p>
+    <div class="dbx-chips">${schoolChip}</div>`;
+}
+document.getElementById('dbPictorial').addEventListener('click', (e) => {
+  if (e.target.closest('#dbCalBtn')) { downloadBookingIcs(); return; }
+  if (e.target.closest('#dbReschedBtn')) {
+    clearAlert('apptAlert');
+    if (hasBookingStarted()) { showTab('tab-appointments'); alertBox('apptAlert', escapeHtml(BOOKING_STARTED_TEXT), 'error'); return; }
+    openSchedule('reschedule');
+  }
+});
+
 function renderBookingReminders(){
-  const banner = document.getElementById('dbBookingReminder');
   const notice = document.getElementById('noticeBookingReminder');
   if (!needsBooking()) {
-    banner.classList.add('hidden'); banner.innerHTML = '';
     notice.innerHTML = '';
     return;
   }
-  banner.innerHTML = `
-    <div class="db-reminder-text"><strong>Book your pictorial schedule.</strong> Pick a date and time for your graduation pictorial.</div>
-    <button type="button" class="btn btn-primary btn-inline" data-open-schedule>Book now</button>`;
-  banner.classList.remove('hidden');
   notice.innerHTML = `
     <div class="notice-row full notice-reminder">
       <div class="notice-title"><span class="pin">&#128204;</span> Book your pictorial schedule</div>
