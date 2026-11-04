@@ -1386,7 +1386,7 @@ function renderDashboardPictorial(loadError){
       <div class="dbx-kick">Your pictorial</div>
       <div class="dbx-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
       <div class="dbx-time">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} · Philippine time</div>
-      <p class="dbx-text">Your pictorial is complete. Thank you for coming!</p>
+      <p class="dbx-text">Your pictorial is done. Thank you for coming!</p>
       <div class="dbx-chips">${chip('Completed')}${schoolChip}</div>`;
     return;
   }
@@ -1472,7 +1472,7 @@ function renderAppointments(loadError){
         <div class="notice-title">Pictorial <span class="appt-status confirmed">Completed</span></div>
         <div class="appt-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
         <div class="notice-body">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} (Philippine time)${st.school ? ' · ' + escapeHtml(st.school) : ''}</div>
-        <div class="notice-meta">Your pictorial is complete. Thank you for coming! For a retake or any question, please contact the studio.</div>
+        <div class="notice-meta">Your pictorial is done. Thank you for coming! For a retake or any question, please contact the studio.</div>
       </div>`;
     return;
   }
