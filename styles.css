@@ -1133,3 +1133,13 @@ body.modal-open{overflow:hidden;}
 :root[data-theme="dark"] .dbx-kick, :root[data-theme="dark"] .dbx-link{color:#ff6b6b;}
 @media (max-width:880px){ .dbx-row{grid-template-columns:1fr;} .dbx-when{font-size:21px;} }
 :root[data-theme="dark"] .dbx-acts .btn-ghost{color:#ff8a8a; border-color:rgba(255,138,138,.5);}
+
+/* ---------- Arrive 30 minutes early reminder ---------- */
+.arrive-note{margin:10px 0 0; padding:10px 12px; border-radius:10px; background:rgba(178,34,34,.07); color:var(--fg); font-family:var(--font-display); font-size:13.5px; line-height:1.45;}
+.arrive-note strong{color:var(--maroon);}
+.arrive-ic{margin-right:2px;}
+.sd-arrive{display:block; margin:-6px auto 18px; max-width:420px; text-align:center;}
+.dbx-pict .arrive-note{display:inline-block; margin-top:12px;}
+:root[data-theme="dark"] .arrive-note{background:rgba(255,107,107,.12);}
+:root[data-theme="dark"] .arrive-note strong{color:#ff8a8a;}
+.arrive-note strong, .arrive-note .nowrap{white-space:nowrap;}
