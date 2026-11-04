@@ -13,12 +13,19 @@
   const SUN = '<svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
   const MOON = '<svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>';
   const buttons = [...document.querySelectorAll('[data-theme-toggle]')];
+  // Logos with a dark-mode version: <img src="GPS.png" data-dark-src="GPS-dark.png">.
+  const logos = [...document.querySelectorAll('img[data-dark-src]')];
+  logos.forEach(img => { img.dataset.lightSrc = img.getAttribute('src'); });
   buttons.forEach(b => { b.innerHTML = SUN + MOON; });
 
   function apply(theme){
     root.setAttribute('data-theme', theme);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', theme === 'dark' ? '#050505' : '#ffffff');
+    logos.forEach(img => {
+      const src = theme === 'dark' ? img.dataset.darkSrc : img.dataset.lightSrc;
+      if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    });
     const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
     buttons.forEach(b => {
       b.setAttribute('aria-label', label);

@@ -989,9 +989,10 @@ body.modal-open{overflow:hidden;}
 @media (max-width:1024px){
   .dash-sidebar > .theme-toggle{margin:0 10px 0 0;}
 }
-/* The logo has black lettering, so in dark mode it sits on a small white plate. */
-:root[data-theme="dark"] .brand-logo,
-:root[data-theme="dark"] .side-logo{background:#ffffff; border-radius:10px; padding:6px 10px; box-sizing:border-box;}
+/* Logos without a dark version (admin) sit on a small white plate in dark mode; the student
+   portal swaps to GPS-dark.png instead (theme.js, data-dark-src). */
+:root[data-theme="dark"] .brand-logo:not([data-dark-src]),
+:root[data-theme="dark"] .side-logo:not([data-dark-src]){background:#ffffff; border-radius:10px; padding:6px 10px; box-sizing:border-box;}
 :root[data-theme="dark"] .alert-error{background:rgba(178,34,34,0.16); color:#ff8a8a; border-color:rgba(255,120,120,0.35);}
 :root[data-theme="dark"] .alert-success{background:rgba(47,109,76,0.2); color:#8fd6ae; border-color:rgba(120,200,160,0.35);}
 :root[data-theme="dark"] .appt-status.confirmed{background:rgba(178,34,34,0.25); color:#ff9a9a;}
