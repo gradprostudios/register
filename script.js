@@ -191,6 +191,7 @@ const ERROR_TEXT = {
   school_locked: 'You already have a pictorial booking, so your school can’t be changed here. Please contact the studio.',
   slot_full: 'That time slot just filled up. Please pick another time.',
   already_booked: 'You already have a pictorial schedule.',
+  already_completed: 'Your pictorial is already done, so you can’t book another schedule. Please contact the studio if you need a retake.',
   wrong_school: 'That slot is for a different school.',
   slot_unavailable: 'That time slot is no longer available. Please pick another time.',
   booking_closed: 'Pictorial booking is currently closed for your school.',
@@ -1313,6 +1314,12 @@ function hasBookingStarted(){
   const b = bookingState && bookingState.booking;
   return !!b && new Date(b.slot_start).getTime() <= Date.now();
 }
+// The studio's desktop app marks the booking completed once the student's pictures are picked.
+// An older API without "status" means the booking is still active.
+function isPictorialDone(){
+  const b = bookingState && bookingState.booking;
+  return !!b && b.status === 'completed';
+}
 const BOOKING_STARTED_TEXT = 'Your pictorial schedule has already started, so it can’t be changed online. Please contact the studio.';
 
 // The API returns at most 1000 rows per request; a school with short slots can have more.
@@ -1371,6 +1378,16 @@ function renderDashboardPictorial(loadError){
   if (loadError || !bookingState) {
     sub.textContent = 'Always stay updated in your student portal.';
     box.innerHTML = '<div class="dbx-kick">Your pictorial</div><p class="dbx-text">We couldn’t load your schedule. Please refresh the page.</p>';
+    return;
+  }
+  if (b && isPictorialDone()) {
+    sub.textContent = 'Thanks for coming to your pictorial.';
+    box.innerHTML = `
+      <div class="dbx-kick">Your pictorial</div>
+      <div class="dbx-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
+      <div class="dbx-time">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} · Philippine time</div>
+      <p class="dbx-text">Your pictorial is complete. Thank you for coming!</p>
+      <div class="dbx-chips">${chip('Completed')}${schoolChip}</div>`;
     return;
   }
   if (b) {
@@ -1446,6 +1463,17 @@ function renderAppointments(loadError){
            <div class="notice-meta"><button type="button" class="btn btn-primary btn-inline" data-open-schedule>Book now</button></div>
          </div>`
       : '<div class="stub-empty">Pictorial booking isn’t open for your school yet. We’ll post a notice once it opens.</div>';
+    return;
+  }
+
+  if (isPictorialDone()) {
+    list.innerHTML = `
+      <div class="notice-row full">
+        <div class="notice-title">Pictorial <span class="appt-status confirmed">Completed</span></div>
+        <div class="appt-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
+        <div class="notice-body">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} (Philippine time)${st.school ? ' · ' + escapeHtml(st.school) : ''}</div>
+        <div class="notice-meta">Your pictorial is complete. Thank you for coming! For a retake or any question, please contact the studio.</div>
+      </div>`;
     return;
   }
 
@@ -1746,7 +1774,7 @@ document.getElementById('schedConfirm').addEventListener('click', async () => {
     }
     if (code === 'booking_started' || code === 'past_cutoff') { alertBox('schedAlert', escapeHtml(BOOKING_STARTED_TEXT), 'error'); await refreshBooking(); return; }
     rpcFail('schedAlert', res.error);
-    if (code === 'already_booked' || code === 'request_pending' || code === 'no_active_booking' || code === 'booking_closed') await refreshBooking();
+    if (code === 'already_booked' || code === 'already_completed' || code === 'request_pending' || code === 'no_active_booking' || code === 'booking_closed') await refreshBooking();
     return;
   }
 
