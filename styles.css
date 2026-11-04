@@ -1143,3 +1143,4 @@ body.modal-open{overflow:hidden;}
 :root[data-theme="dark"] .arrive-note{background:rgba(255,107,107,.12);}
 :root[data-theme="dark"] .arrive-note strong{color:#ff8a8a;}
 .arrive-note strong, .arrive-note .nowrap{white-space:nowrap;}
+.school-lock-note{margin-top:6px; line-height:1.5;} .school-lock-note .dbx-link{padding:0; font-size:12px;}
