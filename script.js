@@ -1760,8 +1760,11 @@ document.getElementById('schedConfirm').addEventListener('click', async () => {
 // What students see after booking. Edit this list to match the studio's own reminders.
 // The arrival time (ARRIVE_EARLY_MIN before the schedule) is shown on its own above this list.
 const BEFORE_PICTORIAL = [
-  'Wear your complete school uniform',
-  'Bring your school ID',
+  'Get a good night’s sleep the night before',
+  'Eat a light meal and drink water before you come',
+  'Come with clean, neatly styled hair',
+  'Keep your face fresh: light, natural makeup works best on camera',
+  'Bring a comb, face powder or oil-blotting paper for a quick touch-up',
 ];
 let lastBookedMode = 'book';
 function showBookingDone(mode, b){
