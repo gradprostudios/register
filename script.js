@@ -1222,10 +1222,19 @@ function noticeRowHTML(n, full){
   return `
     <div class="notice-row ${full ? 'full' : ''}">
       <div class="notice-title">${n.is_pinned ? '<span class="pin">&#128204;</span>' : ''} ${escapeHtml(n.title)}</div>
-      <div class="notice-body">${escapeHtml(n.body)}</div>
-      <div class="notice-meta">${date}</div>
+      <div class="notice-body">${escapeHtml(full ? n.body : String(n.body || '').replace(/\n\s*\n+/g, '\n'))}</div>
+      <div class="notice-meta">${date}${!full && isLongNotice(n.body) ? ' · <button type="button" class="dbx-link notice-more" data-goto-tab="tab-notice">Read more</button>' : ''}</div>
     </div>`;
 }
+// On the dashboard a notice shows its first few lines; long ones get a "Read more" link to the Notice tab.
+function isLongNotice(body){
+  const text = String(body || '');
+  return text.length > 220 || text.split('\n').length > 5;
+}
+document.getElementById('dbNoticeList').addEventListener('click', (e) => {
+  const link = e.target.closest('[data-goto-tab]');
+  if (link) showTab(link.dataset.gotoTab);
+});
 
 const DB_NOTICE_EMPTY = `<div class="dbx-empty"><span class="dbx-ic red" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></span>
   <div><strong>No new notices</strong>The studio posts reminders for your school here, like what to wear and schedule changes.</div></div>`;

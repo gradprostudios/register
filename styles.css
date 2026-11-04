@@ -1156,3 +1156,11 @@ body.modal-open{overflow:hidden;}
 /* While the keyboard is up: room to scroll the last boxes above it, and nothing pinned on top of the form. */
 body.kb-open{padding-bottom:45vh;}
 body.kb-open .cookie-banner, body.kb-open .theme-toggle.floating{display:none !important;}
+
+/* ---------- Notices: keep the line breaks the studio typed ---------- */
+.notice-row .notice-body{white-space:pre-line; overflow-wrap:anywhere;}
+.notice-row.full .notice-title{font-size:15px;}
+.notice-row.full .notice-body{font-size:14px; line-height:1.65; color:var(--fg); margin-top:8px;}
+/* Dashboard card: first 6 lines only, the rest is in the Notice tab. */
+#dbNoticeList .notice-body{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:6; line-clamp:6; overflow:hidden;}
+.notice-more{font-size:inherit;}
