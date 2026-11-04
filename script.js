@@ -1011,6 +1011,7 @@ function setupTypeahead(inputId, listId, getPool, opts){
   const input = document.getElementById(inputId);
   const list = document.getElementById(listId);
   if (!input || !list) return;
+  input.dataset.suggest = '1'; // phones: keep room for the suggestion list above the keyboard
 
   let items = [];
   let activeIndex = -1;
@@ -2230,3 +2231,49 @@ function renderSoftCopies(){
   const items = [['RAW photos', p.raw_folder_url, p.raw_expires_at], ['Edited photos', p.edited_folder_url, p.edited_expires_at]].filter(it => it[2]);
   list.innerHTML = items.length ? items.map(it => softCopyRowHTML(it[0], it[1], it[2])).join('') : '<div class="stub-empty">No photos have been delivered yet.</div>';
 }
+
+/* -------------------- PHONES: keep the box being typed in above the on-screen keyboard -------------------- */
+(function keepFieldAboveKeyboard(){
+  if (!window.matchMedia || !window.matchMedia('(pointer: coarse)').matches) return;
+  const vv = window.visualViewport;
+  const TYPING = 'input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]), textarea, select';
+  let fullHeight = vv ? vv.height : window.innerHeight;
+  let timer = null;
+
+  const isTyping = (el) => !!(el && el.matches && el.matches(TYPING));
+  function keyboardOpen(){
+    if (!vv) return isTyping(document.activeElement);
+    fullHeight = Math.max(fullHeight, vv.height);
+    return isTyping(document.activeElement) && vv.height < fullHeight * 0.8;
+  }
+  function reveal(){
+    const el = document.activeElement;
+    document.body.classList.toggle('kb-open', keyboardOpen());
+    if (!isTyping(el)) return;
+    // Visible part of the screen (above the keyboard), in the same coordinates as getBoundingClientRect.
+    const top = vv ? vv.offsetTop : 0;
+    const height = vv ? vv.height : window.innerHeight;
+    const r = el.getBoundingClientRect();
+    // Search boxes (School, Course...) go near the top so their suggestion list fits above the keyboard;
+    // other boxes go a little above the middle of what is visible.
+    const target = el.dataset.suggest ? top + 70 : top + height * 0.4;
+    const tooHigh = r.top < top + 60;
+    const tooLow = el.dataset.suggest ? r.top > top + height * 0.35 : r.bottom > top + height - 24;
+    if (!tooHigh && !tooLow) return;
+    const box = scrollParent(el);
+    if (box) box.scrollTop += r.top - target; else window.scrollBy(0, r.top - target);
+  }
+  function scrollParent(el){
+    for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      const oy = getComputedStyle(p).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+    }
+    return null;
+  }
+  const later = (ms) => { clearTimeout(timer); timer = setTimeout(reveal, ms); };
+  // The keyboard takes a moment to slide up, so check again once it has settled.
+  document.addEventListener('focusin', (e) => { if (isTyping(e.target)) { later(120); setTimeout(reveal, 450); } });
+  document.addEventListener('focusout', () => later(150));
+  if (vv) vv.addEventListener('resize', () => later(60));
+  window.addEventListener('orientationchange', () => { fullHeight = 0; later(400); });
+})();
