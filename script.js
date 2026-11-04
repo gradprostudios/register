@@ -46,6 +46,113 @@ document.querySelectorAll('.pw-toggle').forEach(btn => {
   });
 });
 
+/* -------------------- 6-BOX VERIFICATION CODE -------------------- */
+// Each hidden input marked data-otp-boxes gets six one-digit boxes; the hidden input always holds
+// the joined code, so the submit handlers keep reading it as before. Paste or SMS/email autofill
+// of the whole code into any box fills all six.
+function otpBoxesFor(id){ return Array.from(document.querySelectorAll('.otp-boxes[data-for="' + id + '"] input')); }
+function syncOtp(id){
+  const boxes = otpBoxesFor(id);
+  document.getElementById(id).value = boxes.map(b => b.value).join('');
+  boxes.forEach(b => b.classList.toggle('filled', !!b.value));
+}
+function clearOtp(id){ otpBoxesFor(id).forEach(b => { b.value = ''; }); syncOtp(id); }
+function focusOtp(id){ const b = otpBoxesFor(id)[0]; if (b) setTimeout(() => b.focus(), 50); }
+function fillOtpFrom(id, start, text){
+  const boxes = otpBoxesFor(id);
+  const all = (text || '').replace(/\D/g, '');
+  if (all.length >= boxes.length) start = 0; // a whole code always fills from the first box
+  const digits = all.slice(0, boxes.length - start);
+  digits.split('').forEach((d, i) => { boxes[start + i].value = d; });
+  syncOtp(id);
+  const next = boxes[Math.min(start + digits.length, boxes.length - 1)];
+  if (next) next.focus();
+}
+document.querySelectorAll('input[data-otp-boxes]').forEach(hidden => {
+  const id = hidden.id;
+  const wrap = document.createElement('div');
+  wrap.className = 'otp-boxes';
+  wrap.dataset.for = id;
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', '6-digit verification code');
+  wrap.innerHTML = [1, 2, 3, 4, 5, 6].map(n =>
+    `<input type="text" id="${id}-${n}" inputmode="numeric" pattern="[0-9]" maxlength="6" required aria-label="Digit ${n}"${n === 1 ? ' autocomplete="one-time-code"' : ' autocomplete="off"'}>`).join('');
+  hidden.insertAdjacentElement('afterend', wrap);
+  const boxes = otpBoxesFor(id);
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', () => {
+      if (box.value.length > 1) { const v = box.value; box.value = ''; fillOtpFrom(id, i, v); return; }
+      box.value = box.value.replace(/\D/g, '');
+      syncOtp(id);
+      if (box.value && boxes[i + 1]) boxes[i + 1].focus();
+    });
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !box.value && boxes[i - 1]) { boxes[i - 1].value = ''; syncOtp(id); boxes[i - 1].focus(); e.preventDefault(); }
+      else if (e.key === 'ArrowLeft' && boxes[i - 1]) { boxes[i - 1].focus(); e.preventDefault(); }
+      else if (e.key === 'ArrowRight' && boxes[i + 1]) { boxes[i + 1].focus(); e.preventDefault(); }
+    });
+    box.addEventListener('paste', (e) => {
+      e.preventDefault();
+      fillOtpFrom(id, i, (e.clipboardData || window.clipboardData).getData('text'));
+    });
+    box.addEventListener('focus', () => box.select());
+  });
+});
+
+/* -------------------- RESEND COOLDOWN -------------------- */
+// Supabase only sends one code per email per 60 seconds, so the button waits that long too.
+const RESEND_COOLDOWN_S = 60;
+const resendTimers = {};
+function startResendCooldown(btnId){
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  clearInterval(resendTimers[btnId]);
+  let left = RESEND_COOLDOWN_S;
+  const tick = () => {
+    if (left <= 0) {
+      clearInterval(resendTimers[btnId]);
+      btn.disabled = false;
+      btn.textContent = btn.dataset.idle || 'Resend verification code';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Resend code in ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+    left--;
+  };
+  tick();
+  resendTimers[btnId] = setInterval(tick, 1000);
+}
+
+/* -------------------- PASSWORD STRENGTH + MATCH CHECKS (register) -------------------- */
+function passwordScore(pw){
+  if (!pw) return 0;
+  if (pw.length < 8) return 1;
+  let kinds = 0;
+  if (/[a-z]/.test(pw)) kinds++;
+  if (/[A-Z]/.test(pw)) kinds++;
+  if (/[0-9]/.test(pw)) kinds++;
+  if (/[^A-Za-z0-9]/.test(pw)) kinds++;
+  return (pw.length >= 12 && kinds >= 2) || kinds >= 3 ? 3 : 2;
+}
+function updatePasswordChecks(){
+  const pw = document.getElementById('regPassword').value;
+  const confirm = document.getElementById('regPasswordConfirm').value;
+  const score = passwordScore(pw);
+  const meter = document.getElementById('pwMeter');
+  const lbl = document.getElementById('pwMeterLbl');
+  meter.classList.toggle('hidden', !pw);
+  meter.dataset.score = score;
+  lbl.dataset.score = score;
+  lbl.textContent = pw ? ['', 'Too short', 'Okay password', 'Strong password'][score] : '';
+  const len = document.getElementById('pwCheckLen');
+  const match = document.getElementById('pwCheckMatch');
+  len.className = pw.length >= 8 ? 'ok' : '';
+  match.className = !confirm ? '' : confirm === pw ? 'ok' : 'bad';
+  match.textContent = confirm && confirm !== pw ? 'Passwords don’t match yet' : 'Passwords match';
+}
+['regPassword', 'regPasswordConfirm'].forEach(id =>
+  document.getElementById(id).addEventListener('input', updatePasswordChecks));
+
 /* -------------------- view helpers -------------------- */
 // Held in memory only between the register form and the OTP check — never stored.
 let pendingRegistration = null;
@@ -245,6 +352,19 @@ document.getElementById('backToLoginFromVerify').addEventListener('click', async
   showView('login');
 });
 
+// "Wrong email? Change it": back to the register form with the other fields kept.
+document.getElementById('changeEmailLink').addEventListener('click', async (e) => {
+  e.preventDefault();
+  pendingRegistration = null;
+  await sb.auth.signOut();
+  clearAlert('verifyAlert');
+  clearOtp('otpCode');
+  showView('register');
+  const em = document.getElementById('regEmail');
+  em.focus();
+  em.select();
+});
+
 /* -------------------- REGISTER -------------------- */
 document.getElementById('registerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -265,7 +385,7 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
     return;
   }
   if (!agreed) {
-    alertBox('registerAlert', 'Please check the **Terms & Conditions** and **Data Privacy Agreement** before proceeding.', 'error');
+    alertBox('registerAlert', 'Please tick the box to agree to the Terms &amp; Conditions and Privacy Policy before continuing.', 'error');
     return;
   }
 
@@ -305,7 +425,10 @@ document.getElementById('registerForm').addEventListener('submit', async (e) => 
   pendingRegistration = { username, password, email };
 
   document.getElementById('verifyEmailShown').textContent = email;
+  clearOtp('otpCode');
   showView('verify');
+  startResendCooldown('resendBtn');
+  focusOtp('otpCode');
 });
 
 /* -------------------- LOGIN -------------------- */
@@ -531,7 +654,7 @@ document.getElementById('otpForm').addEventListener('submit', async (e) => {
   }
 
   pendingRegistration = null;
-  document.getElementById('otpCode').value = '';
+  clearOtp('otpCode');
   setSession(session.session_token);
   await enterPortal();
 });
@@ -564,6 +687,7 @@ document.getElementById('resendBtn').addEventListener('click', async () => {
     alertBox('verifyAlert', error.message, 'error');
   } else {
     alertBox('verifyAlert', 'Verification code resent. Check your inbox.', 'success');
+    startResendCooldown('resendBtn');
   }
 });
 
@@ -631,8 +755,10 @@ document.getElementById('forgotForm').addEventListener('submit', async (e) => {
     'If <strong id="resetEmailShown">' + escapeHtml(identifier) + '</strong> matches an account, we sent a 6-digit code to its registered email' +
     (gpsReset.email ? ' (' + escapeHtml(maskEmail(gpsReset.email)) + ')' : '') +
     '. Enter it below and choose a new password.';
-  document.getElementById('resetOtpCode').value = '';
+  clearOtp('resetOtpCode');
   showView('reset');
+  startResendCooldown('resetResendBtn');
+  focusOtp('resetOtpCode');
 });
 
 /* -------------------- FORGOT PASSWORD (OTP) — step 2: verify code + set new password -------------------- */
@@ -689,6 +815,7 @@ document.getElementById('resetForm').addEventListener('submit', async (e) => {
 
   gpsReset = { username: '', email: null };
   document.getElementById('resetForm').reset();
+  clearOtp('resetOtpCode');
   setSession(newToken);
   await enterPortal();
 });
@@ -697,6 +824,7 @@ document.getElementById('resetResendBtn').addEventListener('click', async () => 
   clearAlert('resetAlert');
   if (!gpsReset.email) {
     alertBox('resetAlert', 'Verification code resent. Check your inbox.', 'success');
+    startResendCooldown('resetResendBtn');
     return;
   }
   const btn = document.getElementById('resetResendBtn');
@@ -706,7 +834,7 @@ document.getElementById('resetResendBtn').addEventListener('click', async () => 
   btn.disabled = false;
   btn.textContent = 'Resend verification code';
   if (error) alertBox('resetAlert', error.message, 'error');
-  else alertBox('resetAlert', 'Verification code resent. Check your inbox.', 'success');
+  else { alertBox('resetAlert', 'Verification code resent. Check your inbox.', 'success'); startResendCooldown('resetResendBtn'); }
 });
 
 /* -------------------- CHANGE PASSWORD (dashboard, OTP) -------------------- */
@@ -1463,6 +1591,9 @@ function closeSchedule(){
 
 async function openSchedule(mode){
   schedMode = mode;
+  document.querySelector('.sched-card').classList.remove('is-done');
+  document.getElementById('schedDone').classList.add('hidden');
+  document.getElementById('schedSteps').classList.toggle('hidden', mode !== 'book');
   schedDay = null;
   schedSlotId = null;
   const copy = SCHED_COPY[mode];
@@ -1652,6 +1783,11 @@ document.getElementById('schedConfirm').addEventListener('click', async () => {
   }
 
   const mode = schedMode;
+  if (mode !== 'cancel') {
+    await refreshBooking();
+    showBookingDone(mode, res.data || {});
+    return;
+  }
   closeSchedule();
   await refreshBooking();
   showTab('tab-appointments');
@@ -1663,7 +1799,31 @@ document.getElementById('schedConfirm').addEventListener('click', async () => {
   }
 });
 
-/* -------------------- RENDER PROFILE GRID -------------------- */
+// What students see after booking. Edit this list to match the studio's own reminders.
+const BEFORE_PICTORIAL = [
+  'Wear your complete school uniform',
+  'Bring your school ID',
+  'Arrive 15 minutes before your schedule (Philippine time)',
+];
+let lastBookedMode = 'book';
+function showBookingDone(mode, b){
+  lastBookedMode = mode;
+  document.getElementById('schedDoneTitle').textContent = mode === 'book' ? 'You’re booked!' : 'Schedule updated';
+  document.getElementById('schedDoneSub').textContent = mode === 'book' ? 'Your pictorial schedule is saved.' : 'Your pictorial is moved to the new schedule.';
+  document.getElementById('schedDoneWhen').textContent = b.slot_start ? fmtManilaDate(b.slot_start) + ' · ' + fmtSlotRange(b.slot_start, b.slot_end) : '';
+  document.getElementById('schedDoneBring').innerHTML = BEFORE_PICTORIAL.map(t => '<li>' + escapeHtml(t) + '</li>').join('');
+  document.getElementById('schedDone').classList.remove('hidden');
+  document.querySelector('.sched-card').classList.add('is-done');
+  document.getElementById('schedDoneTitle').focus();
+}
+document.getElementById('schedDoneClose').addEventListener('click', () => {
+  closeSchedule();
+  showTab('tab-appointments');
+  const b = bookingState && bookingState.booking;
+  if (b) alertBox('apptAlert', `Your pictorial ${lastBookedMode === 'book' ? 'is booked for' : 'is now moved to'} <strong>${escapeHtml(fmtManilaDate(b.slot_start))}, ${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))}</strong>.`, 'success');
+});
+document.getElementById('schedDoneCal').addEventListener('click', () => downloadBookingIcs());
+
 /* -------------------- RENDER PROFILE GRID -------------------- */
 function renderProfileGrid(){
   const grid = document.getElementById('profileGrid');
@@ -1890,6 +2050,14 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
 /* -------------------- STEP 2 — student info registration -------------------- */
 let step2TypeaheadWired = false;
 
+// Accepts 9171234567, 09171234567, +63 917 123 4567 or 639171234567; saves it as 09171234567.
+function normalizePhMobile(value){
+  let d = String(value || '').replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('63')) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return /^9\d{9}$/.test(d) ? '0' + d : null;
+}
+
 async function showStep2(profile){
   await loadLookups();
   currentProfile = profile || {};
@@ -1968,6 +2136,8 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   if (!gender) { alertBox('step2Alert', 'Please select your Gender.', 'error'); return; }
   if (!school) { alertBox('step2Alert', 'Please select your School.', 'error'); return; }
   if (!contact) { alertBox('step2Alert', 'Please enter Contact Number.', 'error'); return; }
+  const mobile = normalizePhMobile(contact);
+  if (!mobile) { alertBox('step2Alert', 'Please enter a valid 10-digit mobile number, e.g. 917 123 4567.', 'error'); return; }
 
   const placement = (document.querySelector('input[name="s2SuffixPlacement"]:checked') || {}).value || 'none';
   const fullName = buildFullName(lastName, firstName, middleInitial, suffix, placement);
@@ -1987,7 +2157,7 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
       'College': val('s2College'),
       'Course': val('s2Course'),
       'Major': val('s2Major'),
-      'Contact .': contact,
+      'Contact .': mobile,
       'Socials': val('s2Socials'),
       'Full Name': fullName,
     }
