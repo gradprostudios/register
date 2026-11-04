@@ -1819,6 +1819,9 @@ function renderProfileGrid(){
   }
 
   const p = currentProfile;
+  // With an active booking the school is fixed (slots belong to a school), so it is shown as
+  // locked text with the reason, not as a search box that could rewrite or clear it.
+  const schoolLocked = !!(bookingState && bookingState.booking);
   grid.innerHTML = `
     <div class="profile-field">
       <span class="eyebrow">Username</span>
@@ -1859,8 +1862,11 @@ function renderProfileGrid(){
     </div>
     <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_School">School<span class="req-star">*</span></label>
-      <input type="text" id="edit_School" value="${escapeHtml(p['School'] || '')}" autocomplete="off" placeholder="Type to search your school"${bookingState && bookingState.booking ? ' readonly title="Your school can’t be changed while you have a pictorial booking."' : ''}>
-      <div class="suggest-list" id="edit_SchoolList"></div>
+      ${schoolLocked
+        ? `<div class="val val-locked" id="edit_SchoolLocked">${escapeHtml(p['School'] || '')}</div>
+      <div class="field-hint school-lock-note">&#128274; Your school is locked because you have a pictorial booking. To change it, cancel your booking in <button type="button" class="dbx-link" data-goto-tab="tab-appointments">Appointments</button> first, or contact the studio.</div>`
+        : `<input type="text" id="edit_School" value="${escapeHtml(p['School'] || '')}" autocomplete="off" placeholder="Type to search your school">
+      <div class="suggest-list" id="edit_SchoolList"></div>`}
     </div>
     <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_College">College</label>
@@ -1899,7 +1905,7 @@ function renderProfileGrid(){
     required: true,
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Gender from the suggestions.', 'error'); }
   });
-  setupTypeahead('edit_School', 'edit_SchoolList', distinctSchools, {
+  if (!schoolLocked) setupTypeahead('edit_School', 'edit_SchoolList', distinctSchools, {
     required: true,
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a School from the suggestions.', 'error'); }
   });
@@ -1929,6 +1935,12 @@ function renderProfileGrid(){
   preview();
 }
 
+// Links drawn inside the profile grid (e.g. "Appointments" in the locked-school note).
+document.getElementById('profileGrid').addEventListener('click', (e) => {
+  const link = e.target.closest('[data-goto-tab]');
+  if (link) showTab(link.dataset.gotoTab);
+});
+
 document.getElementById('editProfileBtn').addEventListener('click', () => {
   clearAlert('profileAlert');
   profileEditMode = true;
@@ -1951,7 +1963,9 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   const middleInitial = val('edit_MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('edit_Suffix'));
   const gender = val('edit_Gender');
-  const school = val('edit_School');
+  // Locked school: send the saved value exactly as it is, so the server never sees a "change".
+  const schoolInput = document.getElementById('edit_School');
+  const school = schoolInput ? schoolInput.value.trim() : (currentProfile['School'] || '');
   const contact = val('edit_Contact');
 
   if (!lastName) { alertBox('profileAlert', 'Last name is required.', 'error'); return; }
