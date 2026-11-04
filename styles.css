@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Questrial&display=swap');
 
 :root{
   --ink:#ffffff;
@@ -169,9 +169,10 @@ body{
   60%{ transform:scale(0.92) rotate(4deg); opacity:1; }
   100%{ transform:scale(1) rotate(0deg); opacity:1; }
 }
+/* Tagline in Questrial, a free font close to the logo's Avant Garde lettering. */
 .headline{
-  font-family:'Fraunces', serif;
-  font-style:italic;
+  font-family:'Questrial', 'Century Gothic', 'Segoe UI', sans-serif;
+  font-style:normal;
   font-weight:400;
   font-size:clamp(32px, 3.4vw, 8px);
   line-height:1.15;
@@ -179,10 +180,10 @@ body{
   margin:0;
 }
 .headline em{
-  font-family:'Fraunces', serif;
-  font-style:italic;
+  font-family:inherit;
+  font-style:normal;
   color:var(--fg);
-  font-weight:600;
+  font-weight:400;
 }
 @media (max-width:880px){
   .headline{font-size:18px;}
@@ -1074,10 +1075,12 @@ body.modal-open{overflow:hidden;}
 
 /* Phones: small logo bar on top so the form is visible right away */
 @media (max-width:880px){
-  .panel-left{padding:14px 20px; flex-direction:row; align-items:center; justify-content:center; border-bottom:1px solid var(--line-soft);}
+  .panel-left{padding:14px 20px 12px; flex-direction:column; align-items:center; justify-content:center; gap:8px; border-bottom:1px solid var(--line-soft);}
   .panel-left .brand-row{margin:0;}
   .panel-left .brand-logo{width:120px; margin:0;}
-  .panel-left .seal-wrap{display:none;}
+  /* Tagline stays on phones: one small line under the logo. */
+  .panel-left .seal-wrap{display:block; margin:0; text-align:center;}
+  .panel-left .headline, .panel-left .headline em{font-size:16px;}
   .panel-right{padding:24px 20px 40px; align-items:flex-start;}
   .step-bar{gap:5px;}
   .sb-lbl{font-size:10px; letter-spacing:.04em;}
@@ -1145,3 +1148,11 @@ body.modal-open{overflow:hidden;}
 :root[data-theme="dark"] .arrive-note strong{color:#ff8a8a;}
 .arrive-note strong, .arrive-note .nowrap{white-space:nowrap;}
 .school-lock-note{margin-top:6px; line-height:1.5;} .school-lock-note .dbx-link{padding:0; font-size:12px;}
+
+/* ---------- Phones: on-screen keyboard (script.js keepFieldAboveKeyboard) ---------- */
+@media (pointer:coarse){
+  input, textarea, select{scroll-margin-top:72px; scroll-margin-bottom:24px;}
+}
+/* While the keyboard is up: room to scroll the last boxes above it, and nothing pinned on top of the form. */
+body.kb-open{padding-bottom:45vh;}
+body.kb-open .cookie-banner, body.kb-open .theme-toggle.floating{display:none !important;}
