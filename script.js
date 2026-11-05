@@ -1114,8 +1114,9 @@ function escapeHtml(str){
 
 // ================================================================
 //  Name capitalization
-//  ONLY the Last Name is auto-capitalized (smartName).
-//  First Name is saved and shown exactly as the student typed it.
+//  Last Name: formal capitalization (smartName).
+//  First Name: first letter of each word made capital; letters the student typed in capitals
+//  stay (McDonald, MG, TG). A word typed in ALL CAPS with 4+ letters becomes Title Case.
 // ================================================================
 function capitalizeFirst(w){
   if (!w) return w;
@@ -1124,11 +1125,25 @@ function capitalizeFirst(w){
 
 function smartName(str){
   if (!str) return '';
-  return str.trim().split(/\s+/).filter(Boolean).map(w => {
-    if (w.length <= 2) return w;
+  return lowerIfAllCaps(str).split(/\s+/).filter(Boolean).map((w, i) => {
+    if (w.length <= 2) return i === 0 ? capitalizeFirst(w) : w; // "dy" -> "Dy"; keeps "de la" inside
     if (/[A-Z]/.test(w.slice(1))) return capitalizeFirst(w); // respect typed internal caps (McDonald, DiCaprio)
     if (/^mc[a-z]{3,}$/i.test(w)) return 'Mc' + capitalizeFirst(w.slice(2).toLowerCase());
     return w[0].toUpperCase() + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+// A name typed with Caps Lock on (SANTOS, DE LA CRUZ, MA. TERESA) is lowered first so it can be
+// capitalized normally. Short all-caps names the student meant (MG, TG) have no 4+ letter word, so they stay.
+function lowerIfAllCaps(str){
+  const t = str.trim();
+  return (!/[a-z]/.test(t) && /[A-Z]{4,}/.test(t)) ? t.toLowerCase() : t;
+}
+
+function firstNameCase(str){
+  if (!str) return '';
+  return lowerIfAllCaps(str).split(/\s+/).filter(Boolean).map(w => {
+    return w.replace(/(^|[-'])([a-z])/g, (m, p, c) => p + c.toUpperCase()); // maria -> Maria, mary-ann -> Mary-Ann
   }).join(' ');
 }
 
@@ -1154,12 +1169,17 @@ function titleCase(str){
   }).join(' ');
 }
 
-// Last Name is re-capitalized when the person clicks/tabs away. First Name is left alone.
+// Last Name and First Name are re-capitalized when the person clicks/tabs away.
 function attachAutoCapitalize(prefix){
   const ln = document.getElementById(prefix + 'LastName');
   if (ln) ln.addEventListener('blur', () => {
     ln.value = smartName(ln.value);
     ln.dispatchEvent(new Event('input', { bubbles: true })); // refresh the name preview
+  });
+  const fn = document.getElementById(prefix + 'FirstName');
+  if (fn) fn.addEventListener('blur', () => {
+    fn.value = firstNameCase(fn.value);
+    fn.dispatchEvent(new Event('input', { bubbles: true }));
   });
   const mi = document.getElementById(prefix + 'MiddleInitial');
   if (mi) mi.addEventListener('blur', () => {
@@ -1871,11 +1891,11 @@ function renderProfileGrid(){
     </div>
     <div class="profile-field">
       <label class="eyebrow" for="edit_LastName">Last name<span class="req-star">*</span></label>
-      <input type="text" id="edit_LastName" value="${escapeHtml(p['Last Name'] || '')}" required>
+      <input type="text" id="edit_LastName" autocapitalize="words" value="${escapeHtml(p['Last Name'] || '')}" required>
     </div>
     <div class="profile-field">
       <label class="eyebrow" for="edit_FirstName">First name<span class="req-star">*</span></label>
-      <input type="text" id="edit_FirstName" value="${escapeHtml(p['First Name'] || '')}" required>
+      <input type="text" id="edit_FirstName" autocapitalize="words" value="${escapeHtml(p['First Name'] || '')}" required>
     </div>
     <div class="profile-field">
       <label class="eyebrow" for="edit_MiddleInitial">Middle initial</label>
@@ -1960,7 +1980,7 @@ function renderProfileGrid(){
   const preview = () => {
     document.getElementById('edit_NamePreview').textContent = buildFullName(
       smartName(document.getElementById('edit_LastName').value),
-      document.getElementById('edit_FirstName').value.trim(),
+      firstNameCase(document.getElementById('edit_FirstName').value),
       document.getElementById('edit_MiddleInitial').value.toUpperCase(),
       formatSuffix(document.getElementById('edit_Suffix').value),
       (document.querySelector('input[name="edit_SuffixPlacement"]:checked') || {}).value || 'none'
@@ -1997,7 +2017,7 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   const val = (id) => document.getElementById(id).value.trim();
 
   const lastName = smartName(val('edit_LastName'));
-  const firstName = val('edit_FirstName');
+  const firstName = firstNameCase(val('edit_FirstName'));
   const middleInitial = val('edit_MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('edit_Suffix'));
   const gender = val('edit_Gender');
@@ -2116,7 +2136,7 @@ function updateStep2Preview(){
   const placement = (document.querySelector('input[name="s2SuffixPlacement"]:checked') || {}).value || 'none';
   document.getElementById('s2NamePreview').textContent = buildFullName(
     smartName(document.getElementById('s2LastName').value),
-    document.getElementById('s2FirstName').value.trim(),
+    firstNameCase(document.getElementById('s2FirstName').value),
     document.getElementById('s2MiddleInitial').value.toUpperCase(),
     formatSuffix(document.getElementById('s2Suffix').value),
     placement
@@ -2138,7 +2158,7 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
 
   const val = (id) => document.getElementById(id).value.trim();
   const lastName = smartName(val('s2LastName'));
-  const firstName = val('s2FirstName');
+  const firstName = firstNameCase(val('s2FirstName'));
   const middleInitial = val('s2MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('s2Suffix'));
   const gender = val('s2Gender');
