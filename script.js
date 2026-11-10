@@ -963,7 +963,10 @@ let bookingState = null;
 let DETAILS_ROWS = [];
 
 async function loadLookups(){
-  const { data, error } = await sb.from('Details').select('Schools, Course, Major, Gender, College');
+  // One request: each column is its own lookup list (rows are unrelated across columns), so the
+  // per-list sorting and null filtering happen in the distinct*() helpers below.
+  const { data, error } = await sb.from('Details').select('Schools, Course, Major, Gender, College, Minor')
+    .order('Schools', { ascending: true, nullsFirst: false });
   if (error) { console.error(error); DETAILS_ROWS = []; return; }
   DETAILS_ROWS = data || [];
 }
@@ -1002,6 +1005,64 @@ function distinctMajors(){
   return DETAILS_ROWS.map(r => (r['Major'] || '').trim())
     .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+// Some Minor values were saved with stray spaces or line breaks ("Media and \r\nPhilosophy"):
+// shown and saved with single spaces.
+function distinctMinors(){
+  const seen = new Set();
+  return DETAILS_ROWS.map(r => String(r['Minor'] || '').replace(/\s+/g, ' ').trim())
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+// ================================================================
+//  ATENEO DE DAVAO UNIVERSITY: MINOR
+//  Shown and required only for AdDU + Bachelor of Arts in Interdisciplinary Studies.
+//  When hidden it is cleared and saved as '' so nothing lingers after a school/course change.
+// ================================================================
+const ADDU_SCHOOL = 'ateneo de davao university';
+const ADDU_MINOR_COURSE = 'bachelor of arts in interdisciplinary studies';
+const normKey = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
+function isAdduSchool(v){ return normKey(v) === ADDU_SCHOOL; }
+
+// Does the Minor apply for the form with this prefix ('s2' or 'edit_')? In edit mode a locked
+// school has no input, so the saved school is used.
+function adduState(prefix){
+  const schoolEl = document.getElementById(prefix + 'School');
+  const courseEl = document.getElementById(prefix + 'Course');
+  const school = schoolEl ? schoolEl.value : (currentProfile && currentProfile['School']);
+  return { minor: isAdduSchool(school) && normKey(courseEl && courseEl.value) === ADDU_MINOR_COURSE };
+}
+
+function syncAdduFields(prefix){
+  const on = adduState(prefix).minor;
+  const box = document.getElementById(prefix + 'MinorBox');
+  if (!box) return;
+  box.classList.toggle('open', on);
+  box.setAttribute('aria-hidden', on ? 'false' : 'true');
+  const input = document.getElementById(prefix + 'Minor');
+  if (!on && input && input.value) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
+}
+
+function wireAdduFields(prefix, alertId){
+  setupTypeahead(prefix + 'Minor', prefix + 'MinorList', distinctMinors, {
+    onInvalid: (why) => { if (why === 'nomatch') alertBox(alertId, 'Please pick a Minor from the suggestions.', 'error'); }
+  });
+  ['School', 'Course'].forEach(f => {
+    const el = document.getElementById(prefix + f);
+    if (!el) return;
+    el.addEventListener('input', () => syncAdduFields(prefix));
+    el.addEventListener('change', () => syncAdduFields(prefix));
+    el.addEventListener('blur', () => setTimeout(() => syncAdduFields(prefix), 200)); // after the type-ahead settles the value
+  });
+  syncAdduFields(prefix);
+}
+
+// Value to save; when the field is not shown it saves as ''.
+function adduValues(prefix){
+  const shown = adduState(prefix).minor;
+  const el = document.getElementById(prefix + 'Minor');
+  return { minor: shown && el ? el.value.replace(/\s+/g, ' ').trim() : '', minorRequired: shown };
 }
 
 // ================================================================
@@ -1840,6 +1901,8 @@ function renderProfileGrid(){
       ['College', currentProfile['College'] || 'Not set yet'],
       ['Course', currentProfile['Course'] || 'Not set yet'],
       ['Major', currentProfile['Major'] || 'Not set yet'],
+      ...(isAdduSchool(currentProfile['School']) && normKey(currentProfile['Course']) === ADDU_MINOR_COURSE
+        ? [['Minor', currentProfile['Minor'] || 'Not set yet']] : []),
       ['Contact number', currentProfile['Contact .'] || 'Not set yet'],
       ['Socials', currentProfile['Socials'] || 'Not set yet'],
     ];
@@ -1921,6 +1984,13 @@ function renderProfileGrid(){
       <input type="text" id="edit_Major" value="${escapeHtml(p['Major'] || '')}" autocomplete="off" placeholder="Type to search (leave blank if none)">
       <div class="suggest-list" id="edit_MajorList"></div>
     </div>
+    <div class="span-2 addu-extra${isAdduSchool(p['School']) && normKey(p['Course']) === ADDU_MINOR_COURSE ? ' open' : ''}" id="edit_MinorBox"><div>
+      <div class="profile-field suggest-wrap">
+        <label class="eyebrow" for="edit_Minor">Minor<span class="req-star">*</span></label>
+        <input type="text" id="edit_Minor" value="${escapeHtml(p['Minor'] || '')}" autocomplete="off" placeholder="Type to search your minor">
+        <div class="suggest-list" id="edit_MinorList"></div>
+      </div>
+    </div></div>
     <div class="profile-field">
       <label class="eyebrow" for="edit_Contact">Contact number<span class="req-star">*</span></label>
       <input type="text" id="edit_Contact" value="${escapeHtml(p['Contact .'] || '')}" required>
@@ -1956,6 +2026,7 @@ function renderProfileGrid(){
   setupTypeahead('edit_Major', 'edit_MajorList', distinctMajors, {
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Major from the suggestions, or leave it blank.', 'error'); }
   });
+  wireAdduFields('edit_', 'profileAlert');
 
   const preview = () => {
     document.getElementById('edit_NamePreview').textContent = buildFullName(
@@ -2015,6 +2086,9 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   const placement = (document.querySelector('input[name="edit_SuffixPlacement"]:checked') || {}).value || 'none';
   const fullName = buildFullName(lastName, firstName, middleInitial, suffix, placement);
 
+  const addu = adduValues('edit_');
+  if (addu.minorRequired && !addu.minor) { alertBox('profileAlert', 'Please select your Minor.', 'error'); return; }
+
   const updates = {
     'Last Name': lastName,
     'First Name': firstName,
@@ -2024,6 +2098,7 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
     'College': val('edit_College'),
     'Course': val('edit_Course'),
     'Major': val('edit_Major'),
+    'Minor': addu.minor,
     'Contact .': contact,
     'Socials': val('edit_Socials'),
     'Full Name': fullName,
@@ -2078,10 +2153,11 @@ async function showStep2(profile){
   currentUser = { username: currentProfile['Username'], email: currentProfile['Email'] };
 
   ['s2LastName','s2FirstName','s2MiddleInitial','s2Suffix',
-   's2Gender','s2School','s2College','s2Course','s2Major',
+   's2Gender','s2School','s2College','s2Course','s2Major','s2Minor',
    's2Contact','s2Socials'].forEach(id => {
     document.getElementById(id).value = '';
   });
+  if (step2TypeaheadWired) syncAdduFields('s2');
   const noneRadio = document.querySelector('input[name="s2SuffixPlacement"][value="none"]');
   if (noneRadio) noneRadio.checked = true;
   document.getElementById('s2NamePreview').textContent = '—';
@@ -2107,6 +2183,7 @@ async function showStep2(profile){
     setupTypeahead('s2Major', 's2MajorList', distinctMajors, {
       onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a Major from the suggestions, or leave it blank.', 'error'); }
     });
+    wireAdduFields('s2', 'step2Alert');
   }
 
   showView('step2');
@@ -2152,6 +2229,8 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   if (!contact) { alertBox('step2Alert', 'Please enter Contact Number.', 'error'); return; }
   const mobile = normalizePhMobile(contact);
   if (!mobile) { alertBox('step2Alert', 'Please enter a valid 10-digit mobile number, e.g. 917 123 4567.', 'error'); return; }
+  const addu = adduValues('s2');
+  if (addu.minorRequired && !addu.minor) { alertBox('step2Alert', 'Please select your Minor.', 'error'); document.getElementById('s2Minor').focus(); return; }
 
   const placement = (document.querySelector('input[name="s2SuffixPlacement"]:checked') || {}).value || 'none';
   const fullName = buildFullName(lastName, firstName, middleInitial, suffix, placement);
@@ -2171,6 +2250,7 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
       'College': val('s2College'),
       'Course': val('s2Course'),
       'Major': val('s2Major'),
+      'Minor': addu.minor,
       'Contact .': mobile,
       'Socials': val('s2Socials'),
       'Full Name': fullName,
