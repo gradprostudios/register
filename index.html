@@ -274,7 +274,17 @@
     <div id="step2Alert"></div>
 
     <form id="step2Form">
-      <div class="form-sec"><b>1</b>About you<span></span></div>
+      <div class="form-sec"><b>1</b>School<span></span></div>
+      <div class="field suggest-wrap">
+        <label for="s2School">School<span class="req-star">*</span></label>
+        <div class="select-wrap"><input type="text" id="s2School" required autocomplete="off" placeholder="Type to search your school"></div>
+        <div class="suggest-list" id="s2SchoolList"></div>
+        <div class="field-hint">Pick your school from the list. Can't find it? It isn't open for online registration yet, please contact the studio.</div>
+      </div>
+
+      <!-- Shown only after a listed school is picked. -->
+      <div id="s2Rest" class="hidden">
+      <div class="form-sec"><b>2</b>About you<span></span></div>
       <div class="field-row">
         <div class="field">
           <label for="s2LastName">Last Name<span class="req-star">*</span></label>
@@ -312,27 +322,23 @@
         <div class="suggest-list" id="s2GenderList"></div>
       </div>
 
-      <div class="form-sec"><b>2</b>School<span></span></div>
-      <div class="field suggest-wrap">
-        <label for="s2School">School<span class="req-star">*</span></label>
-        <div class="select-wrap"><input type="text" id="s2School" required autocomplete="off" placeholder="Type to search your school"></div>
-        <div class="suggest-list" id="s2SchoolList"></div>
-      </div>
-
-      <div class="field suggest-wrap">
+      <div class="form-sec"><b>3</b>Education<span></span></div>
+      <!-- Labels and boxes change with the school's education level (College: College/Course/Major,
+           SHS: Strand/Section, JHS and Grade School: Grade Level/Section). -->
+      <div class="field suggest-wrap" id="s2CollegeWrap">
         <label for="s2College">College</label>
         <div class="select-wrap"><input type="text" id="s2College" autocomplete="off" placeholder="Type to search (leave blank if none)"></div>
         <div class="suggest-list" id="s2CollegeList"></div>
       </div>
 
       <div class="field suggest-wrap">
-        <label for="s2Course">Course</label>
+        <label for="s2Course" id="s2CourseLbl">Course</label>
         <div class="select-wrap"><input type="text" id="s2Course" autocomplete="off" placeholder="Type to search your course"></div>
         <div class="suggest-list" id="s2CourseList"></div>
       </div>
 
       <div class="field suggest-wrap">
-        <label for="s2Major">Major</label>
+        <label for="s2Major" id="s2MajorLbl">Major</label>
         <div class="select-wrap"><input type="text" id="s2Major" autocomplete="off" placeholder="Type to search (leave blank if none)"></div>
         <div class="suggest-list" id="s2MajorList"></div>
       </div>
@@ -346,7 +352,7 @@
         </div>
       </div></div>
 
-      <div class="form-sec"><b>3</b>Contact<span></span></div>
+      <div class="form-sec"><b>4</b>Contact<span></span></div>
       <div class="field">
         <label for="s2Contact">Contact Number<span class="req-star">*</span></label>
         <div class="phone-wrap"><span aria-hidden="true">+63</span><input type="tel" id="s2Contact" required inputmode="tel" autocomplete="tel-national" placeholder="917 123 4567" aria-describedby="s2ContactHint"></div>
@@ -362,10 +368,11 @@
         <span class="eyebrow" style="display:block; text-align:center; margin-bottom:6px;">Name Preview</span>
         <div class="name-preview-banner" id="s2NamePreview">—</div>
       </div>
+      </div><!-- /s2Rest -->
 
       <div class="step2-actions">
         <button type="button" class="btn btn-ghost" id="step2Cancel">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="step2Submit">Next</button>
+        <button type="submit" class="btn btn-primary" id="step2Submit" disabled>Next</button>
       </div>
     </form>
   </div>
