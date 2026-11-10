@@ -186,6 +186,9 @@ const ERROR_TEXT = {
   first_name_required: 'Please enter First Name.',
   gender_required: 'Please select your Gender.',
   school_required: 'Please select your School.',
+  school_not_allowed: 'That school is not open for online registration yet. Please pick a school from the list, or contact the studio.',
+  strand_required: 'Please select your Strand.',
+  grade_required: 'Please select your Grade Level.',
   contact_required: 'Please enter Contact Number.',
   invalid_full_name: 'Please check your name details.',
   school_locked: 'You already have a pictorial booking, so your school can’t be changed here. Please contact the studio.',
@@ -961,20 +964,37 @@ let profileEditMode = false;
 let bookingState = null;
 
 let DETAILS_ROWS = [];
+// School (normalised) -> education level: 'college' | 'shs' | 'jhs' | 'gs'.
+// Only schools that have School Settings are in here, so only those can be picked.
+let SCHOOL_LEVELS = new Map();
+let SCHOOLS_LOAD_FAILED = false;
 
 async function loadLookups(){
-  // One request: each column is its own lookup list (rows are unrelated across columns), so the
+  // Each Details column is its own lookup list (rows are unrelated across columns), so the
   // per-list sorting and null filtering happen in the distinct*() helpers below.
-  const { data, error } = await sb.from('Details').select('Schools, Course, Major, Gender, College, Minor')
-    .order('Schools', { ascending: true, nullsFirst: false });
-  if (error) { console.error(error); DETAILS_ROWS = []; return; }
-  DETAILS_ROWS = data || [];
+  // portal_schools() returns only school + education level (no prices) for schools with settings.
+  const [det, lv] = await Promise.all([
+    sb.from('Details').select('Schools, Course, Major, Gender, College, Minor, Strand, Grade, Section')
+      .order('Schools', { ascending: true, nullsFirst: false }),
+    sb.rpc('portal_schools')
+  ]);
+  if (det.error) { console.error(det.error); DETAILS_ROWS = []; }
+  else DETAILS_ROWS = det.data || [];
+
+  SCHOOL_LEVELS = new Map();
+  SCHOOLS_LOAD_FAILED = !!lv.error;
+  if (lv.error) console.error(lv.error);
+  else (lv.data || []).forEach(r => {
+    const k = normKey(r.school);
+    if (k) SCHOOL_LEVELS.set(k, String(r.education_level || 'college').trim().toLowerCase());
+  });
 }
 
+// The Details table is the list of schools; only those with School Settings can be chosen.
 function distinctSchools(){
   const seen = new Set();
   return DETAILS_ROWS.map(r => (r['Schools'] || '').trim())
-    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
+    .filter(v => v && SCHOOL_LEVELS.has(normKey(v)) && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
 function distinctColleges(){
@@ -1031,7 +1051,7 @@ function adduState(prefix){
   const schoolEl = document.getElementById(prefix + 'School');
   const courseEl = document.getElementById(prefix + 'Course');
   const school = schoolEl ? schoolEl.value : (currentProfile && currentProfile['School']);
-  return { minor: isAdduSchool(school) && normKey(courseEl && courseEl.value) === ADDU_MINOR_COURSE };
+  return { minor: isAdduSchool(school) && currentLevel(prefix) === 'college' && normKey(courseEl && courseEl.value) === ADDU_MINOR_COURSE };
 }
 
 function syncAdduFields(prefix){
@@ -1063,6 +1083,146 @@ function adduValues(prefix){
   const shown = adduState(prefix).minor;
   const el = document.getElementById(prefix + 'Minor');
   return { minor: shown && el ? el.value.replace(/\s+/g, ' ').trim() : '', minorRequired: shown };
+}
+
+// ================================================================
+//  EDUCATION LEVEL (from School Settings)
+//  college : College / Course / Major (+ Minor for AdDU)
+//  shs     : Strand / Section          (saved in Strand + Section)
+//  jhs, gs : Grade Level / Section     (saved in Grade + Section)
+//  Same rules as the desktop registration. The Course + Major boxes are reused for the
+//  Strand/Grade + Section, and are cleared whenever the level changes.
+// ================================================================
+const LEVEL_UI = {
+  college: { course: 'Course',      major: 'Major',   req: false, cph: 'Type to search your course',      mph: 'Type to search (leave blank if none)' },
+  shs:     { course: 'Strand',      major: 'Section', req: true,  cph: 'Type to search your strand',      mph: 'Type to search your section (leave blank if none)' },
+  jhs:     { course: 'Grade Level', major: 'Section', req: true,  cph: 'Type to search your grade level', mph: 'Type to search your section (leave blank if none)' },
+  gs:      { course: 'Grade Level', major: 'Section', req: true,  cph: 'Type to search your grade level', mph: 'Type to search your section (leave blank if none)' },
+};
+
+// Existing records of a school with no settings (registered before this rule): read the level from the data.
+function inferLevel(p){
+  if (p && String(p['Strand'] || '').trim()) return 'shs';
+  if (p && String(p['Grade'] || '').trim()) return 'jhs';
+  return 'college';
+}
+// Level of a school name, or null when it is not a listed school.
+function levelOf(school){
+  const k = normKey(school);
+  if (!k) return null;
+  if (SCHOOL_LEVELS.has(k)) return SCHOOL_LEVELS.get(k);
+  if (currentProfile && normKey(currentProfile['School']) === k) return inferLevel(currentProfile); // unchanged saved school
+  return null;
+}
+// Level for the form with this prefix ('s2' or 'edit_'); a locked school has no input, so the saved one is used.
+function currentLevel(prefix){
+  const el = document.getElementById(prefix + 'School');
+  return levelOf(el ? el.value : (currentProfile && currentProfile['School']));
+}
+
+function distinctUnique(col){
+  const seen = new Set();
+  return DETAILS_ROWS.map(r => String(r[col] || '').replace(/\s+/g, ' ').trim())
+    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
+}
+function distinctStrands(){
+  return distinctUnique('Strand').sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+function distinctSections(){
+  return distinctUnique('Section').sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+}
+// Grade School: Kindergarten, then Grade 1-6.  Junior High: Grade 7-10.
+function distinctGrades(level){
+  const all = distinctUnique('Grade');
+  const num = (g) => { const n = parseInt(String(g).replace(/grade/i, '').trim(), 10); return isNaN(n) ? null : n; };
+  if (level === 'gs') {
+    const kinder = all.filter(g => /^kinder/i.test(g));
+    const nums = all.filter(g => { const n = num(g); return n !== null && n >= 1 && n <= 6; }).sort((a, b) => num(a) - num(b));
+    return kinder.concat(nums);
+  }
+  return all.filter(g => { const n = num(g); return n !== null && n >= 7 && n <= 10; }).sort((a, b) => num(a) - num(b));
+}
+// What the Course / Major boxes of this form should suggest right now.
+function levelPool(prefix, kind){
+  const lvl = currentLevel(prefix) || 'college';
+  if (kind === 'course') {
+    if (lvl === 'shs') return distinctStrands();
+    if (lvl === 'jhs' || lvl === 'gs') return distinctGrades(lvl);
+    return distinctCourses();
+  }
+  return (lvl === 'college') ? distinctMajors() : distinctSections();
+}
+function levelLabel(prefix, kind){
+  const L = LEVEL_UI[currentLevel(prefix) || 'college'];
+  return kind === 'course' ? L.course : L.major;
+}
+
+// Values to save, by level. Boxes that do not belong to the level are saved as ''.
+function levelValues(prefix){
+  const lvl = currentLevel(prefix) || 'college';
+  const g = (id) => { const el = document.getElementById(prefix + id); return el ? el.value.trim() : ''; };
+  const out = { level: lvl, College: '', Course: '', Major: '', Strand: '', Section: '', Grade: '' };
+  if (lvl === 'shs') { out.Strand = g('Course'); out.Section = g('Major'); }
+  else if (lvl === 'jhs' || lvl === 'gs') { out.Grade = g('Course'); out.Section = g('Major'); }
+  else { out.College = g('College'); out.Course = g('Course'); out.Major = g('Major'); }
+  return out;
+}
+// Strand / Grade Level are required for their levels. Returns an error message or ''.
+function levelError(lv){
+  if (lv.level === 'shs' && !lv.Strand) return 'Please select your Strand.';
+  if ((lv.level === 'jhs' || lv.level === 'gs') && !lv.Grade) return 'Please select your Grade Level.';
+  return '';
+}
+
+// Labels, placeholders and which boxes show for a level.
+function applyLevelUI(prefix, lvl){
+  const L = LEVEL_UI[lvl] || LEVEL_UI.college;
+  const star = L.req ? '<span class="req-star">*</span>' : '';
+  const cl = document.getElementById(prefix + 'CourseLbl');
+  const ml = document.getElementById(prefix + 'MajorLbl');
+  if (cl) cl.innerHTML = L.course + star;
+  if (ml) ml.textContent = L.major;
+  const ci = document.getElementById(prefix + 'Course');
+  const mi = document.getElementById(prefix + 'Major');
+  if (ci) ci.placeholder = L.cph;
+  if (mi) mi.placeholder = L.mph;
+  const wrap = document.getElementById(prefix + 'CollegeWrap');
+  if (wrap) wrap.classList.toggle('hidden', lvl !== 'college');
+}
+
+// Called whenever the School box changes. School first: on the registration screen nothing else
+// shows (and Next stays off) until a listed school is chosen.
+function syncLevelFields(prefix, init){
+  const lvl = currentLevel(prefix);
+  const holder = document.getElementById(prefix + 'School') || document.getElementById(prefix + 'Course');
+  if (lvl && holder) {
+    const last = holder.dataset.lvl || '';
+    if (!init && last && last !== lvl) {
+      ['College', 'Course', 'Major', 'Minor'].forEach(f => {
+        const el = document.getElementById(prefix + f);
+        if (el) el.value = '';
+      });
+    }
+    holder.dataset.lvl = lvl;
+    applyLevelUI(prefix, lvl);
+  }
+  if (prefix === 's2') {
+    const rest = document.getElementById('s2Rest');
+    const next = document.getElementById('step2Submit');
+    if (rest) rest.classList.toggle('hidden', !lvl);
+    if (next) next.disabled = !lvl;
+  }
+  syncAdduFields(prefix);
+}
+
+function wireLevelFields(prefix){
+  const el = document.getElementById(prefix + 'School');
+  if (el) {
+    el.addEventListener('input', () => syncLevelFields(prefix));
+    el.addEventListener('change', () => syncLevelFields(prefix));
+    el.addEventListener('blur', () => setTimeout(() => syncLevelFields(prefix), 200)); // after the type-ahead settles the value
+  }
+  syncLevelFields(prefix, true);
 }
 
 // ================================================================
@@ -1912,17 +2072,20 @@ function renderProfileGrid(){
   const editBtn = document.getElementById('editProfileBtn');
 
   if (!profileEditMode) {
+    const lvlNow = levelOf(currentProfile['School']) || inferLevel(currentProfile);
+    const ns = (k) => currentProfile[k] || 'Not set yet';
+    const eduRows = lvlNow === 'shs' ? [['Strand', ns('Strand')], ['Section', ns('Section')]]
+      : (lvlNow === 'jhs' || lvlNow === 'gs') ? [['Grade level', ns('Grade')], ['Section', ns('Section')]]
+      : [['College', ns('College')], ['Course', ns('Course')], ['Major', ns('Major')],
+         ...(isAdduSchool(currentProfile['School']) && normKey(currentProfile['Course']) === ADDU_MINOR_COURSE
+           ? [['Minor', ns('Minor')]] : [])];
     const rows = [
       ['Full name', currentProfile['Full Name'] || 'Not set yet'],
       ['Username', currentProfile['Username'] || 'Not set yet'],
       ['Email', currentUser.email],
       ['Gender', currentProfile['Gender'] || 'Not set yet'],
       ['School', currentProfile['School'] || 'Not set yet'],
-      ['College', currentProfile['College'] || 'Not set yet'],
-      ['Course', currentProfile['Course'] || 'Not set yet'],
-      ['Major', currentProfile['Major'] || 'Not set yet'],
-      ...(isAdduSchool(currentProfile['School']) && normKey(currentProfile['Course']) === ADDU_MINOR_COURSE
-        ? [['Minor', currentProfile['Minor'] || 'Not set yet']] : []),
+      ...eduRows,
       ['Contact number', currentProfile['Contact .'] || 'Not set yet'],
       ['Socials', currentProfile['Socials'] || 'Not set yet'],
     ];
@@ -1943,6 +2106,9 @@ function renderProfileGrid(){
   // With an active booking the school is fixed (slots belong to a school), so it is shown as
   // locked text with the reason, not as a search box that could rewrite or clear it.
   const schoolLocked = !!(bookingState && bookingState.booking);
+  const lv0 = levelOf(p['School']) || inferLevel(p);
+  const courseVal = lv0 === 'shs' ? p['Strand'] : (lv0 === 'jhs' || lv0 === 'gs') ? p['Grade'] : p['Course'];
+  const majorVal = lv0 === 'college' ? p['Major'] : p['Section'];
   grid.innerHTML = `
     <div class="profile-field">
       <span class="eyebrow">Username</span>
@@ -1989,22 +2155,22 @@ function renderProfileGrid(){
         : `<input type="text" id="edit_School" value="${escapeHtml(p['School'] || '')}" autocomplete="off" placeholder="Type to search your school">
       <div class="suggest-list" id="edit_SchoolList"></div>`}
     </div>
-    <div class="profile-field span-2 suggest-wrap">
+    <div class="profile-field span-2 suggest-wrap${lv0 === 'college' ? '' : ' hidden'}" id="edit_CollegeWrap">
       <label class="eyebrow" for="edit_College">College</label>
       <input type="text" id="edit_College" value="${escapeHtml(p['College'] || '')}" autocomplete="off" placeholder="Type to search (leave blank if none)">
       <div class="suggest-list" id="edit_CollegeList"></div>
     </div>
     <div class="profile-field span-2 suggest-wrap">
-      <label class="eyebrow" for="edit_Course">Course</label>
-      <input type="text" id="edit_Course" value="${escapeHtml(p['Course'] || '')}" autocomplete="off" placeholder="Type to search your course">
+      <label class="eyebrow" for="edit_Course" id="edit_CourseLbl">Course</label>
+      <input type="text" id="edit_Course" value="${escapeHtml(courseVal || '')}" autocomplete="off" placeholder="Type to search your course">
       <div class="suggest-list" id="edit_CourseList"></div>
     </div>
     <div class="profile-field span-2 suggest-wrap">
-      <label class="eyebrow" for="edit_Major">Major</label>
-      <input type="text" id="edit_Major" value="${escapeHtml(p['Major'] || '')}" autocomplete="off" placeholder="Type to search (leave blank if none)">
+      <label class="eyebrow" for="edit_Major" id="edit_MajorLbl">Major</label>
+      <input type="text" id="edit_Major" value="${escapeHtml(majorVal || '')}" autocomplete="off" placeholder="Type to search (leave blank if none)">
       <div class="suggest-list" id="edit_MajorList"></div>
     </div>
-    <div class="span-2 addu-extra${isAdduSchool(p['School']) && normKey(p['Course']) === ADDU_MINOR_COURSE ? ' open' : ''}" id="edit_MinorBox"><div>
+    <div class="span-2 addu-extra${lv0 === 'college' && isAdduSchool(p['School']) && normKey(p['Course']) === ADDU_MINOR_COURSE ? ' open' : ''}" id="edit_MinorBox"><div>
       <div class="profile-field suggest-wrap">
         <label class="eyebrow" for="edit_Minor">Minor<span class="req-star">*</span></label>
         <input type="text" id="edit_Minor" value="${escapeHtml(p['Minor'] || '')}" autocomplete="off" placeholder="Type to search your minor">
@@ -2033,20 +2199,27 @@ function renderProfileGrid(){
     required: true,
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Gender from the suggestions.', 'error'); }
   });
-  if (!schoolLocked) setupTypeahead('edit_School', 'edit_SchoolList', distinctSchools, {
+  // The school already saved stays selectable even if it has no settings (registered before this rule).
+  const editSchools = () => {
+    const list = distinctSchools();
+    const cur = (p['School'] || '').trim();
+    return cur && !list.some(v => normKey(v) === normKey(cur)) ? list.concat([cur]) : list;
+  };
+  if (!schoolLocked) setupTypeahead('edit_School', 'edit_SchoolList', editSchools, {
     required: true,
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a School from the suggestions.', 'error'); }
   });
   setupTypeahead('edit_College', 'edit_CollegeList', distinctColleges, {
     onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a College from the suggestions, or leave it blank.', 'error'); }
   });
-  setupTypeahead('edit_Course', 'edit_CourseList', distinctCourses, {
-    onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Course from the suggestions, or leave it blank.', 'error'); }
+  setupTypeahead('edit_Course', 'edit_CourseList', () => levelPool('edit_', 'course'), {
+    onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', `Please pick a ${levelLabel('edit_', 'course')} from the suggestions${currentLevel('edit_') === 'college' ? ', or leave it blank' : ''}.`, 'error'); }
   });
-  setupTypeahead('edit_Major', 'edit_MajorList', distinctMajors, {
-    onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Major from the suggestions, or leave it blank.', 'error'); }
+  setupTypeahead('edit_Major', 'edit_MajorList', () => levelPool('edit_', 'major'), {
+    onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', `Please pick a ${levelLabel('edit_', 'major')} from the suggestions, or leave it blank.`, 'error'); }
   });
   wireAdduFields('edit_', 'profileAlert');
+  wireLevelFields('edit_');
 
   const preview = () => {
     document.getElementById('edit_NamePreview').textContent = buildFullName(
@@ -2103,6 +2276,11 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   if (!school) { alertBox('profileAlert', 'Please select your school.', 'error'); return; }
   if (!contact) { alertBox('profileAlert', 'Contact number is required.', 'error'); return; }
 
+  if (!levelOf(school)) { alertBox('profileAlert', 'Please pick a school from the list.', 'error'); return; }
+  const lv = levelValues('edit_');
+  const lvErr = levelError(lv);
+  if (lvErr) { alertBox('profileAlert', lvErr, 'error'); return; }
+
   const placement = (document.querySelector('input[name="edit_SuffixPlacement"]:checked') || {}).value || 'none';
   const fullName = buildFullName(lastName, firstName, middleInitial, suffix, placement);
 
@@ -2115,9 +2293,12 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
     'Middle Initial': middleInitial,
     'Gender': gender,
     'School': school,
-    'College': val('edit_College'),
-    'Course': val('edit_Course'),
-    'Major': val('edit_Major'),
+    'College': lv.College,
+    'Course': lv.Course,
+    'Major': lv.Major,
+    'Strand': lv.Strand,
+    'Section': lv.Section,
+    'Grade': lv.Grade,
     'Minor': addu.minor,
     'Contact .': contact,
     'Socials': val('edit_Socials'),
@@ -2177,7 +2358,9 @@ async function showStep2(profile){
    's2Contact','s2Socials'].forEach(id => {
     document.getElementById(id).value = '';
   });
-  if (step2TypeaheadWired) syncAdduFields('s2');
+  const s2School = document.getElementById('s2School');
+  if (s2School) s2School.dataset.lvl = '';
+  if (step2TypeaheadWired) syncLevelFields('s2', true);   // School first: hides the rest until a school is picked
   const noneRadio = document.querySelector('input[name="s2SuffixPlacement"][value="none"]');
   if (noneRadio) noneRadio.checked = true;
   document.getElementById('s2NamePreview').textContent = '—';
@@ -2197,13 +2380,18 @@ async function showStep2(profile){
     setupTypeahead('s2College', 's2CollegeList', distinctColleges, {
       onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a College from the suggestions, or leave it blank.', 'error'); }
     });
-    setupTypeahead('s2Course', 's2CourseList', distinctCourses, {
-      onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a Course from the suggestions, or leave it blank.', 'error'); }
+    setupTypeahead('s2Course', 's2CourseList', () => levelPool('s2', 'course'), {
+      onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', `Please pick a ${levelLabel('s2', 'course')} from the suggestions${currentLevel('s2') === 'college' ? ', or leave it blank' : ''}.`, 'error'); }
     });
-    setupTypeahead('s2Major', 's2MajorList', distinctMajors, {
-      onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a Major from the suggestions, or leave it blank.', 'error'); }
+    setupTypeahead('s2Major', 's2MajorList', () => levelPool('s2', 'major'), {
+      onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', `Please pick a ${levelLabel('s2', 'major')} from the suggestions, or leave it blank.`, 'error'); }
     });
     wireAdduFields('s2', 'step2Alert');
+    wireLevelFields('s2');
+  }
+
+  if (SCHOOLS_LOAD_FAILED || distinctSchools().length === 0) {
+    alertBox('step2Alert', 'Online registration is not available right now. Please try again later or contact the studio.', 'error');
   }
 
   showView('step2');
@@ -2249,6 +2437,10 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   if (!contact) { alertBox('step2Alert', 'Please enter Contact Number.', 'error'); return; }
   const mobile = normalizePhMobile(contact);
   if (!mobile) { alertBox('step2Alert', 'Please enter a valid 10-digit mobile number, e.g. 917 123 4567.', 'error'); return; }
+  if (!levelOf(school)) { alertBox('step2Alert', 'Please pick your school from the list.', 'error'); document.getElementById('s2School').focus(); return; }
+  const lv = levelValues('s2');
+  const lvErr = levelError(lv);
+  if (lvErr) { alertBox('step2Alert', lvErr, 'error'); document.getElementById('s2Course').focus(); return; }
   const addu = adduValues('s2');
   if (addu.minorRequired && !addu.minor) { alertBox('step2Alert', 'Please select your Minor.', 'error'); document.getElementById('s2Minor').focus(); return; }
 
@@ -2267,9 +2459,12 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
       'Middle Initial': middleInitial,
       'Gender': gender,
       'School': school,
-      'College': val('s2College'),
-      'Course': val('s2Course'),
-      'Major': val('s2Major'),
+      'College': lv.College,
+      'Course': lv.Course,
+      'Major': lv.Major,
+      'Strand': lv.Strand,
+      'Section': lv.Section,
+      'Grade': lv.Grade,
       'Minor': addu.minor,
       'Contact .': mobile,
       'Socials': val('s2Socials'),
