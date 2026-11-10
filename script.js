@@ -1131,16 +1131,15 @@ function distinctStrands(){
 function distinctSections(){
   return distinctUnique('Section').sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 }
-// Grade School: Kindergarten, then Grade 1-6.  Junior High: Grade 7-10.
+// Grade School and Junior High show the same list: Kindergarten, then Grade 1-10.
+// BED / IBED schools have Kinder, Grade 6 and Grade 10 classes under one school, so the list
+// is not split by level. Grade 11-12 belong to Senior High (Strand), so they are left out.
 function distinctGrades(level){
   const all = distinctUnique('Grade');
   const num = (g) => { const n = parseInt(String(g).replace(/grade/i, '').trim(), 10); return isNaN(n) ? null : n; };
-  if (level === 'gs') {
-    const kinder = all.filter(g => /^kinder/i.test(g));
-    const nums = all.filter(g => { const n = num(g); return n !== null && n >= 1 && n <= 6; }).sort((a, b) => num(a) - num(b));
-    return kinder.concat(nums);
-  }
-  return all.filter(g => { const n = num(g); return n !== null && n >= 7 && n <= 10; }).sort((a, b) => num(a) - num(b));
+  const kinder = all.filter(g => /^kinder/i.test(g));
+  const nums = all.filter(g => { const n = num(g); return n !== null && n >= 1 && n <= 10; }).sort((a, b) => num(a) - num(b));
+  return kinder.concat(nums);
 }
 // What the Course / Major boxes of this form should suggest right now.
 function levelPool(prefix, kind){
