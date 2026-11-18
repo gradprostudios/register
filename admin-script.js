@@ -644,30 +644,46 @@ async function showSlotDay(day, opts){
   renderSlotDay();
 }
 
-function renderDayStrip(keepScroll){
-  const strip = $('slotDayStrip');
-  const blocked = (settingsFor($('slotSchool').value) || {}).blocked_dates || [];
+// Day strip shared by Slots and Hair & Makeup: one chip per day with booked/capacity.
+function paintDayStrip({ strip, prev, next, days, slots, active, blocked = [], empty, keepScroll }){
   const byDay = {};
-  slotRows.forEach(s => { (byDay[manilaDay(s.slot_start)] = byDay[manilaDay(s.slot_start)] || []).push(s); });
+  slots.forEach(s => { const d = manilaDay(s.slot_start); (byDay[d] = byDay[d] || []).push(s); });
   const today = todayManila();
-  strip.innerHTML = slotDays.length ? slotDays.map(d => {
+  strip.innerHTML = days.length ? days.map(d => {
     const list = byDay[d] || [];
     const booked = list.reduce((a, s) => a + s.booked_count, 0);
     const cap = list.reduce((a, s) => a + s.capacity, 0);
     const isBlocked = blocked.includes(d);
     const closed = isBlocked || (list.length > 0 && list.every(s => s.is_closed));
-    const cls = ['day-chip', d === slotDay ? 'is-active' : '', closed ? 'is-closed' : '', d < today ? 'is-past' : '', cap && booked >= cap ? 'is-full' : ''].join(' ');
-    return `<button type="button" class="${cls}" role="option" aria-selected="${d === slotDay}" data-strip-day="${d}">
+    const cls = ['day-chip', d === active ? 'is-active' : '', closed ? 'is-closed' : '', d < today ? 'is-past' : '', cap && booked >= cap ? 'is-full' : ''].join(' ');
+    return `<button type="button" class="${cls}" role="option" aria-selected="${d === active}" data-strip-day="${d}">
       <span class="dc-dow">${escapeHtml(fmtDay(d, { month: undefined, day: undefined }))}</span>
       <span class="dc-date">${escapeHtml(fmtDay(d, { weekday: undefined }))}</span>
       <span class="dc-meta">${isBlocked ? 'Blocked' : closed ? 'Closed' : `${booked}/${cap}`}</span>
     </button>`;
-  }).join('') : '<span class="muted">No slots yet. Generate them from Slot Settings.</span>';
-  const i = slotDays.indexOf(slotDay);
-  $('slotPrevDay').disabled = i <= 0;
-  $('slotNextDay').disabled = i < 0 || i >= slotDays.length - 1;
-  const active = strip.querySelector('.is-active');
-  if (active) active.scrollIntoView({ block: 'nearest', inline: 'center', behavior: keepScroll ? 'auto' : 'smooth' });
+  }).join('') : `<span class="muted">${escapeHtml(empty)}</span>`;
+  const i = days.indexOf(active);
+  prev.disabled = i <= 0;
+  next.disabled = i < 0 || i >= days.length - 1;
+  const chipEl = strip.querySelector('.is-active');
+  if (chipEl) chipEl.scrollIntoView({ block: 'nearest', inline: 'center', behavior: keepScroll ? 'auto' : 'smooth' });
+}
+
+// Slot status chip shared by Slots and Hair & Makeup.
+function slotStatusChip(s){
+  if (new Date(s.slot_start).getTime() <= Date.now()) return '<span class="chip chip-cancelled">Past</span>';
+  if (s.is_closed) return '<span class="chip chip-rejected">Closed</span>';
+  if (s.booked_count >= s.capacity) return '<span class="chip chip-pending">Full</span>';
+  return '<span class="chip chip-approved">Open</span>';
+}
+
+function renderDayStrip(keepScroll){
+  paintDayStrip({
+    strip: $('slotDayStrip'), prev: $('slotPrevDay'), next: $('slotNextDay'),
+    days: slotDays, slots: slotRows, active: slotDay, keepScroll,
+    blocked: (settingsFor($('slotSchool').value) || {}).blocked_dates || [],
+    empty: 'No slots yet. Generate them from Slot Settings.',
+  });
 }
 
 function renderSlotDay(){
@@ -687,7 +703,6 @@ function renderSlotDay(){
     return;
   }
   const allClosed = list.every(s => s.is_closed);
-  const now = Date.now();
   $('slotsList').innerHTML = `
     <div class="day-card">
       <div class="day-head">
@@ -701,7 +716,6 @@ function renderSlotDay(){
       <table class="table slot-table">
         <thead><tr><th>Time</th><th>Booked students</th><th>Capacity</th><th>Left</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map(s => {
-          const past = new Date(s.slot_start).getTime() <= now;
           const names = slotDayNames[new Date(s.slot_start).getTime()] || [];
           return `
           <tr class="${s.is_closed ? 'row-closed' : ''}">
@@ -709,7 +723,7 @@ function renderSlotDay(){
             <td data-label="Booked students">${s.booked_count ? (names.length ? names.map(n => `<div>${escapeHtml(n)}</div>`).join('') : `${s.booked_count} booked`) : '<span class="muted">—</span>'}</td>
             <td data-label="Capacity"><span class="cap-edit"><input type="number" min="${s.booked_count}" max="500" value="${s.capacity}" data-cap-input="${s.id}" aria-label="Capacity"><button type="button" class="btn-link" data-cap-save="${s.id}">Save</button></span></td>
             <td data-label="Left">${Math.max(s.capacity - s.booked_count, 0)}</td>
-            <td data-label="Status">${past ? '<span class="chip chip-cancelled">Past</span>' : s.is_closed ? '<span class="chip chip-rejected">Closed</span>' : s.booked_count >= s.capacity ? '<span class="chip chip-pending">Full</span>' : '<span class="chip chip-approved">Open</span>'}</td>
+            <td data-label="Status">${slotStatusChip(s)}</td>
             <td><div class="row-actions">
               <button type="button" class="btn-link" data-slot-toggle="${s.id}" data-closed="${s.is_closed}">${s.is_closed ? 'Reopen' : 'Close'}</button>
               ${s.booked_count ? '' : `<button type="button" class="btn-link danger" data-slot-del="${s.id}">Delete</button>`}
@@ -1166,7 +1180,7 @@ $('hmuSchool').addEventListener('change', () => {
   clearAlert('hmuAlert');
   fillHmuForm();
   const row = hmuFor($('hmuSchool').value);
-  if (row && $('hmuListSchool').value !== row.school) { $('hmuListSchool').value = row.school; $('hmuListDate').value = ''; loadHmuList(); }
+  if (row && $('hmuListSchool').value !== row.school) showHmuSchool(row.school);
 });
 
 $('hmuForm').addEventListener('submit', async (e) => {
@@ -1209,107 +1223,139 @@ $('hmuGenBtn').addEventListener('click', () => {
       if (saved.notes.length) html += '<br>' + saved.notes.join(' ');
       if (!r.slots) html += '<br>No slots were made. Check that the dates are in the future and the days of the week are right.';
       alertBox('hmuAlert', html, saved.warn || r.closed_leftovers || !r.slots ? 'warn' : 'success');
-      $('hmuListSchool').value = saved.name;
-      $('hmuListDate').value = '';
-      loadHmuList();
+      showHmuSchool(saved.name);
       return true;
     },
   });
 });
 
-/* ---- HMU list ---- */
-let hmuListRows = [];
-let hmuListSlots = [];
+/* ---- HMU list (same layout as Slots: day strip, then one table per school) ---- */
+let hmuSlotRows = [];   // every HMU slot for the chosen school, or all schools (all dates)
+let hmuDays = [];       // sorted 'YYYY-MM-DD' days that have HMU slots
+let hmuDay = null;      // the day on screen
+let hmuListRows = [];   // HMU bookings on hmuDay
 
-// Today if it has HMU slots, else the next day that does (falls back to today).
-async function firstHmuDay(school){
-  let q = sb.from('hmu_slots').select('slot_start').gte('slot_start', dayStartIso(todayManila())).order('slot_start').limit(1);
-  if (school) q = q.eq('school', school);
-  const { data } = await q;
-  return data && data.length ? manilaDay(data[0].slot_start) : todayManila();
+// Show a school's HMU list from its first upcoming day.
+function showHmuSchool(school){
+  $('hmuListSchool').value = school;
+  hmuDay = null;
+  loadHmuList();
 }
 
 async function loadHmuList(){
   const seq = nextSeq('hmuList');
   const school = $('hmuListSchool').value || null;
-  if (!$('hmuListDate').value) $('hmuListDate').value = await firstHmuDay(school);
+  if (!hmuSlotRows.length) $('hmuList').innerHTML = '<div class="empty">Loading…</div>';
+  const { data, error } = await fetchAll(() => {
+    const q = sb.from('hmu_slots').select('id, school, slot_start, slot_end, capacity, booked_count, is_closed').order('slot_start');
+    return school ? q.eq('school', school) : q;
+  });
   if (seq !== loadSeq.hmuList) return;
-  const day = $('hmuListDate').value;
-  $('hmuList').innerHTML = '<div class="empty">Loading…</div>';
-  const [bk, sl] = await Promise.all([
-    fetchAll(() => sb.rpc('staff_list_hmu_bookings', { p_school: school, p_day: day })),
-    fetchAll(() => {
-      let q = sb.from('hmu_slots').select('id, school, slot_start, slot_end, capacity, booked_count, is_closed')
-        .gte('slot_start', dayStartIso(day)).lt('slot_start', dayStartIso(nextDay(day))).order('slot_start');
-      return school ? q.eq('school', school) : q;
-    }),
-  ]);
-  if (seq !== loadSeq.hmuList) return;
-  if (bk.error || sl.error) { showErr('hmuListAlert', bk.error || sl.error, 'Could not load the HMU list.'); $('hmuList').innerHTML = ''; return; }
-  hmuListRows = bk.data || [];
-  hmuListSlots = sl.data || [];
+  if (error) { showErr('hmuListAlert', error, 'Could not load HMU slots.'); $('hmuList').innerHTML = ''; return; }
+  hmuSlotRows = data || [];
+  hmuDays = [...new Set(hmuSlotRows.map(s => manilaDay(s.slot_start)))].sort();
+  // Keep the chosen day; otherwise today, else the next day with slots, else the last one.
+  const today = todayManila();
+  if (!hmuDay) hmuDay = hmuDays.find(d => d >= today) || hmuDays[hmuDays.length - 1] || null;
+  await showHmuDay(hmuDay, { keepScroll: true });
+}
+
+async function showHmuDay(day, opts){
+  hmuDay = day;
+  $('hmuListDate').value = day || '';
+  hmuListRows = [];
+  paintDayStrip({
+    strip: $('hmuDayStrip'), prev: $('hmuPrevDay'), next: $('hmuNextDay'),
+    days: hmuDays, slots: hmuSlotRows, active: day, keepScroll: opts && opts.keepScroll,
+    empty: 'No HMU slots yet. Generate them in the settings above.',
+  });
+  renderHmuList();
+  if (!day) return;
+  const seq = nextSeq('hmuDay');
+  const { data, error } = await fetchAll(() => sb.rpc('staff_list_hmu_bookings', { p_school: $('hmuListSchool').value || null, p_day: day }));
+  if (seq !== loadSeq.hmuDay || day !== hmuDay) return;
+  if (error) { showErr('hmuListAlert', error, 'Could not load HMU bookings.'); return; }
+  hmuListRows = data || [];
   renderHmuList();
 }
 
+const holdsSeat = (b) => b.status === 'booked' || b.status === 'completed';
+
+function hmuPersonHtml(b){
+  const off = b.status === 'cancelled' || b.status === 'no_show';
+  return `
+    <div class="hmu-person${off ? ' is-off' : ''}">
+      <div><strong>${escapeHtml(b.full_name || '—')}</strong> <span class="muted">${escapeHtml(b.username)}</span>${b.status === 'booked' ? '' : ' ' + chip(b.status)}</div>
+      ${b.pictorial_start ? `<div class="muted">Pictorial ${escapeHtml(fmtTime(b.pictorial_start))}</div>` : ''}
+      ${b.status === 'needs_rebook' ? '<div class="muted">Pictorial changed. Ask the student to pick a new HMU time.</div>' : ''}
+      ${b.status === 'booked' ? `
+      <div class="row-actions">
+        <button type="button" class="btn-link" data-hmu-status="completed" data-id="${b.id}">Completed</button>
+        <button type="button" class="btn-link" data-hmu-status="no_show" data-id="${b.id}">No-show</button>
+        <button type="button" class="btn-link danger" data-hmu-status="cancelled" data-id="${b.id}">Cancel</button>
+      </div>` : ''}
+    </div>`;
+}
+
 function renderHmuList(){
-  const day = $('hmuListDate').value;
+  const day = hmuDay;
+  if (!day) {
+    $('hmuListSummary').textContent = '';
+    $('hmuList').innerHTML = '<div class="empty">No HMU slots yet. Generate them in the settings above.</div>';
+    return;
+  }
   const title = escapeHtml(fmtDay(day, { weekday: 'long', month: 'long', year: 'numeric' }));
-  const schools = [...new Set([...hmuListSlots.map(s => s.school), ...hmuListRows.map(b => b.school)])].sort((a, b) => a.localeCompare(b));
-  const holdsSeat = (b) => b.status === 'booked' || b.status === 'completed';
-  const active = hmuListRows.filter(holdsSeat).length;
+  const slots = hmuSlotRows.filter(s => manilaDay(s.slot_start) === day);
+  const booked = slots.reduce((a, s) => a + s.booked_count, 0);
+  const open = slots.reduce((a, s) => a + (s.is_closed ? 0 : Math.max(s.capacity - s.booked_count, 0)), 0);
   const rebook = hmuListRows.filter(b => b.status === 'needs_rebook').length;
-  $('hmuListSummary').innerHTML = (hmuListSlots.length || hmuListRows.length)
-    ? `<span><strong>${title}</strong></span><span><strong>${active}</strong> booked</span>`
+  $('hmuListSummary').innerHTML = slots.length
+    ? `<span><strong>${slots.length}</strong> slots</span><span><strong>${booked}</strong> booked</span><span><strong>${open}</strong> open seats</span>`
       + (rebook ? `<span>${chip('needs_rebook')} ${rebook}</span>` : '')
     : '';
+  const schools = [...new Set([...slots.map(s => s.school), ...hmuListRows.map(b => b.school)])].sort((a, b) => a.localeCompare(b));
   if (!schools.length) {
-    $('hmuList').innerHTML = `<div class="empty">No HMU slots or bookings on ${title}.</div>`;
+    $('hmuList').innerHTML = `<div class="day-card"><div class="day-head"><div><strong>${title}</strong></div></div>
+      <div class="empty flat">No HMU slots on this day.</div></div>`;
     return;
   }
   $('hmuList').innerHTML = schools.map(school => {
-    const slots = hmuListSlots.filter(s => s.school === school);
+    const list = slots.filter(s => s.school === school);
     const rows = hmuListRows.filter(b => b.school === school);
+    const at = (iso) => new Date(iso).getTime();
+    const slotTimes = new Set(list.map(s => at(s.slot_start)));
+    // Bookings whose slot is not in the list (e.g. a closed leftover) get their own rows at the end.
+    const others = rows.filter(b => !slotTimes.has(at(b.hmu_start)));
     const h = hmuFor(school) || {};
-    const dayActive = rows.filter(holdsSeat).length;
-    const cap = slots.reduce((a, s) => a + (s.is_closed ? 0 : s.capacity), 0);
+    const cap = list.reduce((a, s) => a + (s.is_closed ? 0 : s.capacity), 0);
     const limit = h.max_per_day ? `${h.max_per_day} max per day` : `${cap} daily capacity`;
-    const linked = hmuLinked(school);
-    // Every slot of the day, plus any booking whose slot is not in the list (e.g. a closed leftover).
-    const groups = slots.map(s => ({ s, rows: rows.filter(b => new Date(b.hmu_start).getTime() === new Date(s.slot_start).getTime()) }));
-    const shown = new Set(groups.flatMap(g => g.rows));
-    const other = rows.filter(b => !shown.has(b));
-    if (other.length) groups.push({ s: null, rows: other });
     return `
       <div class="day-card">
         <div class="day-head">
-          <div><strong>${escapeHtml(school)}</strong> <span class="muted">${linked ? 'Linked to pictorial' : 'Open schedule'}</span></div>
-          <div><strong>${dayActive}</strong> booked / ${escapeHtml(limit)}</div>
+          <div><strong>${title}</strong> <span class="muted">${escapeHtml(school)} · ${hmuLinked(school) ? 'Linked to pictorial' : 'Open schedule'}</span></div>
+          <div><strong>${rows.filter(holdsSeat).length}</strong> booked / ${escapeHtml(limit)}</div>
         </div>
-        ${groups.map(g => `
-          <div class="hmu-slot-head">
-            <strong>${g.s ? escapeHtml(fmtRange(g.s.slot_start, g.s.slot_end)) : 'Other times'}</strong>
-            ${g.s ? `<span class="row-actions"><span class="muted">${g.s.booked_count}/${g.s.capacity} booked${g.s.is_closed ? ' · <span class="chip chip-rejected">Closed</span>' : ''}</span>
-              ${!g.s.booked_count && !g.rows.length ? `<button type="button" class="btn-link danger" data-hmu-slot-del="${g.s.id}">Delete slot</button>` : ''}</span>` : ''}
-          </div>
-          ${g.rows.length ? `
-          <table class="table slot-table">
-            <thead><tr><th>Name</th><th>Username</th><th>HMU time</th><th>Pictorial</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>${g.rows.map(b => `
-              <tr class="${b.status === 'cancelled' || b.status === 'no_show' ? 'row-closed' : ''}">
-                <td data-label="Name"><strong>${escapeHtml(b.full_name || '—')}</strong></td>
-                <td data-label="Username">${escapeHtml(b.username)}</td>
-                <td data-label="HMU time">${escapeHtml(fmtRange(b.hmu_start, b.hmu_end))}</td>
-                <td data-label="Pictorial">${b.pictorial_start ? escapeHtml(fmtTime(b.pictorial_start)) : ''}</td>
-                <td data-label="Status">${chip(b.status)}${b.status === 'needs_rebook' ? '<div class="muted">Pictorial changed. Ask the student to pick a new HMU time.</div>' : ''}</td>
-                <td data-label="Actions">${b.status === 'booked' ? `
-                  <div class="row-actions">
-                    <button type="button" class="btn-link" data-hmu-status="completed" data-id="${b.id}">Completed</button>
-                    <button type="button" class="btn-link" data-hmu-status="no_show" data-id="${b.id}">No-show</button>
-                    <button type="button" class="btn-link danger" data-hmu-status="cancelled" data-id="${b.id}">Cancel</button>
-                  </div>` : ''}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>` : '<div class="hmu-slot-empty">No students yet.</div>'}`).join('')}
+        <table class="table slot-table">
+          <thead><tr><th>Time</th><th>Booked students</th><th>Capacity</th><th>Left</th><th>Status</th><th></th></tr></thead>
+          <tbody>${list.map(s => {
+            const people = rows.filter(b => at(b.hmu_start) === at(s.slot_start));
+            return `
+            <tr class="${s.is_closed ? 'row-closed' : ''}">
+              <td data-label="Time"><strong>${escapeHtml(fmtRange(s.slot_start, s.slot_end))}</strong></td>
+              <td data-label="Booked students">${people.length ? people.map(hmuPersonHtml).join('') : '<span class="muted">—</span>'}</td>
+              <td data-label="Capacity">${s.capacity}</td>
+              <td data-label="Left">${Math.max(s.capacity - s.booked_count, 0)}</td>
+              <td data-label="Status">${slotStatusChip(s)}</td>
+              <td>${!s.booked_count && !people.length ? `<button type="button" class="btn-link danger" data-hmu-slot-del="${s.id}">Delete</button>` : ''}</td>
+            </tr>`; }).join('')}
+          ${others.map(b => `
+            <tr>
+              <td data-label="Time"><strong>${escapeHtml(fmtRange(b.hmu_start, b.hmu_end))}</strong><div class="muted">Not in the current slots</div></td>
+              <td data-label="Booked students">${hmuPersonHtml(b)}</td>
+              <td data-label="Capacity">—</td><td data-label="Left">—</td><td data-label="Status">—</td><td></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
       </div>`;
   }).join('');
 }
@@ -1323,7 +1369,7 @@ $('hmuList').addEventListener('click', (e) => {
   const delBtn = e.target.closest('[data-hmu-slot-del]');
   if (delBtn) {
     clearAlert('hmuListAlert');
-    const slot = hmuListSlots.find(s => s.id === delBtn.dataset.hmuSlotDel);
+    const slot = hmuSlotRows.find(s => s.id === delBtn.dataset.hmuSlotDel);
     openDialog({
       title: 'Delete this HMU slot?',
       body: `<p><strong>${escapeHtml(slot.school)}</strong> · HMU ${escapeHtml(fmtWhen(slot.slot_start))} will be removed. Students will no longer see it.</p><p class="muted">This can’t be undone. “Generate / Rebuild HMU slots” will create it again if the date is still in range.</p>`,
@@ -1359,9 +1405,15 @@ $('hmuList').addEventListener('click', (e) => {
 });
 
 $('hmuListLoadBtn').addEventListener('click', () => { clearAlert('hmuListAlert'); loadHmuList(); });
-$('hmuListSchool').addEventListener('change', () => { clearAlert('hmuListAlert'); $('hmuListDate').value = ''; loadHmuList(); });
-$('hmuListDate').addEventListener('change', () => { clearAlert('hmuListAlert'); if ($('hmuListDate').value) loadHmuList(); });
-$('hmuListTodayBtn').addEventListener('click', () => { clearAlert('hmuListAlert'); $('hmuListDate').value = todayManila(); loadHmuList(); });
+$('hmuListSchool').addEventListener('change', () => { clearAlert('hmuListAlert'); showHmuSchool($('hmuListSchool').value); });
+$('hmuDayStrip').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-strip-day]');
+  if (btn) { clearAlert('hmuListAlert'); showHmuDay(btn.dataset.stripDay); }
+});
+$('hmuPrevDay').addEventListener('click', () => { const i = hmuDays.indexOf(hmuDay); if (i > 0) showHmuDay(hmuDays[i - 1]); });
+$('hmuNextDay').addEventListener('click', () => { const i = hmuDays.indexOf(hmuDay); if (i >= 0 && i < hmuDays.length - 1) showHmuDay(hmuDays[i + 1]); });
+$('hmuListDate').addEventListener('change', () => { if ($('hmuListDate').value) { clearAlert('hmuListAlert'); showHmuDay($('hmuListDate').value); } });
+$('hmuListTodayBtn').addEventListener('click', () => { clearAlert('hmuListAlert'); showHmuDay(todayManila()); });
 
 // CSV of HMU bookings for the chosen school (or all schools): one day, or every date.
 async function downloadHmuCsv(btn, allDates){
