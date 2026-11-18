@@ -21,6 +21,9 @@ const ERROR_TEXT = {
   booking_not_active: 'That booking is no longer active. The list has been refreshed.',
   capacity_below_booked: 'Capacity can’t be lower than the number of students already booked in that slot.',
   slot_not_found: 'That slot no longer exists.',
+  school_has_bookings: 'Students are still booked for this school (pictorial or Hair & Makeup). Move or cancel them first, then delete.',
+  slot_has_bookings:'Someone is booked in that slot. Move or cancel them first, then delete it.',
+  slot_has_history: 'That slot has past booking records, so it can’t be deleted. Close it instead.',
   invalid_status: 'Invalid booking status.',
   slot_full: 'The chosen slot is already full.',
   slot_unavailable: 'The chosen slot is closed or already in the past.',
@@ -532,11 +535,50 @@ async function renderSettingsTable(){
         <td data-label="Students">${r.total_students ? `<strong>${r.total_students.toLocaleString()}</strong><div class="muted">${r.per_slot_capacity} per hour</div>` : `<span class="muted">${r.per_slot_capacity} per ${r.slot_minutes === 60 ? 'hour' : r.slot_minutes + ' min'}</span>`}</td>
         <td data-label="Blocked">${(r.blocked_dates || []).length ? dayRanges([...r.blocked_dates].sort()).map(rg => escapeHtml(rangeLabel(rg))).join('<br>') : '<span class="muted">None</span>'}</td>
         <td data-label="Upcoming slots">${counts[i].count ?? '—'}</td>
-        <td><button type="button" class="btn-link" data-edit-school="${escapeHtml(r.school)}">Edit</button></td>
+        <td><div class="row-actions">
+          <button type="button" class="btn-link" data-edit-school="${escapeHtml(r.school)}">Edit</button>
+          <button type="button" class="btn-link danger" data-del-school="${escapeHtml(r.school)}">Delete</button>
+        </div></td>
       </tr>`).join('')}
     </tbody>`;
 }
 $('settingsTable').addEventListener('click', (e) => {
+  const delBtn = e.target.closest('[data-del-school]');
+  if (delBtn) {
+    const school = delBtn.dataset.delSchool;
+    clearAlert('settingsAlert');
+    openDialog({
+      title: 'Delete this school setup?',
+      body: `<p>This deletes the booking setup of <strong>${escapeHtml(school)}</strong>, including Hair &amp; Makeup:</p>
+        <ul class="dialog-list">
+          <li>its pictorial settings and HMU settings</li>
+          <li>every pictorial slot and HMU slot nobody has booked</li>
+        </ul>
+        <p class="muted">If students are still booked, nothing is deleted. Move or cancel them first. If some slots have past records (cancelled, completed, no-show), those slots and the settings are kept and booking is turned OFF instead. Student accounts are not touched. This can’t be undone.</p>`,
+      okText: 'Delete school setup', danger: true,
+      onOk: async () => {
+        const { data, error } = await sb.rpc('staff_delete_school_setup', { p_school: school });
+        if (error) { showErr('dialogAlert', error); return false; }
+        const r = data || {};
+        const n = (x) => (x || 0).toLocaleString();
+        if (r.removed) {
+          alertBox('settingsAlert', `Deleted the setup of <strong>${escapeHtml(school)}</strong> (${n(r.slots_deleted)} pictorial slot${r.slots_deleted === 1 ? '' : 's'}, ${n(r.hmu_slots_deleted)} HMU slot${r.hmu_slots_deleted === 1 ? '' : 's'}).`, 'success');
+        } else {
+          alertBox('settingsAlert', `Deleted ${n(r.slots_deleted)} pictorial and ${n(r.hmu_slots_deleted)} HMU slots of <strong>${escapeHtml(school)}</strong>. `
+            + `${n((r.slots_kept || 0) + (r.hmu_slots_kept || 0))} slot${(r.slots_kept || 0) + (r.hmu_slots_kept || 0) === 1 ? ' has' : 's have'} past booking records, so the settings were kept and booking + HMU are now <strong>OFF</strong> for this school.`, 'warn');
+        }
+        if ($('setSchool').value === school) $('setSchool').value = '';
+        slotRows = []; slotDay = null;
+        await loadSchools();
+        await loadHmuSettings();
+        fillSchoolSelects();
+        fillSettingsForm();
+        renderSettingsTable();
+        return true;
+      },
+    });
+    return;
+  }
   const btn = e.target.closest('[data-edit-school]');
   if (!btn) return;
   $('setSchool').value = btn.dataset.editSchool;
@@ -661,7 +703,10 @@ function renderSlotDay(){
             <td data-label="Capacity"><span class="cap-edit"><input type="number" min="${s.booked_count}" max="500" value="${s.capacity}" data-cap-input="${s.id}" aria-label="Capacity"><button type="button" class="btn-link" data-cap-save="${s.id}">Save</button></span></td>
             <td data-label="Left">${Math.max(s.capacity - s.booked_count, 0)}</td>
             <td data-label="Status">${past ? '<span class="chip chip-cancelled">Past</span>' : s.is_closed ? '<span class="chip chip-rejected">Closed</span>' : s.booked_count >= s.capacity ? '<span class="chip chip-pending">Full</span>' : '<span class="chip chip-approved">Open</span>'}</td>
-            <td><button type="button" class="btn-link" data-slot-toggle="${s.id}" data-closed="${s.is_closed}">${s.is_closed ? 'Reopen' : 'Close'}</button></td>
+            <td><div class="row-actions">
+              <button type="button" class="btn-link" data-slot-toggle="${s.id}" data-closed="${s.is_closed}">${s.is_closed ? 'Reopen' : 'Close'}</button>
+              ${s.booked_count ? '' : `<button type="button" class="btn-link danger" data-slot-del="${s.id}">Delete</button>`}
+            </div></td>
           </tr>`; }).join('')}
         </tbody>
       </table>
@@ -685,7 +730,25 @@ $('slotsList').addEventListener('click', async (e) => {
   const slotBtn = e.target.closest('[data-slot-toggle]');
   const dayBtn = e.target.closest('[data-day-toggle]');
   const dayBookingsBtn = e.target.closest('[data-day-bookings]');
+  const delBtn = e.target.closest('[data-slot-del]');
   clearAlert('slotsAlert');
+
+  if (delBtn) {
+    const slot = slotRows.find(s => s.id === delBtn.dataset.slotDel);
+    openDialog({
+      title: 'Delete this slot?',
+      body: `<p><strong>${escapeHtml(fmtWhen(slot.slot_start))}</strong> will be removed. Students will no longer see it.</p><p class="muted">This can’t be undone. “Generate slots” or “Rebuild slots” in Slot Settings will create it again if the date is still in range.</p>`,
+      okText: 'Delete slot', danger: true,
+      onOk: async () => {
+        const { error } = await sb.rpc('staff_delete_slot', { p_slot_id: slot.id });
+        if (error) { showErr('dialogAlert', error); if (error.message === 'slot_not_found' || error.message === 'slot_has_bookings') loadSlots(); return false; }
+        alertBox('slotsAlert', `Deleted the ${escapeHtml(fmtRange(slot.slot_start, slot.slot_end))} slot.`, 'success');
+        loadSlots();
+        return true;
+      },
+    });
+    return;
+  }
 
   if (dayBookingsBtn) {
     $('bkSchool').value = $('slotSchool').value;
@@ -1225,7 +1288,8 @@ function renderHmuList(){
         ${groups.map(g => `
           <div class="hmu-slot-head">
             <strong>${g.s ? escapeHtml(fmtRange(g.s.slot_start, g.s.slot_end)) : 'Other'}</strong>
-            ${g.s ? `<span class="muted">${g.s.booked_count}/${g.s.capacity} booked${g.s.is_closed ? ' · <span class="chip chip-rejected">Closed</span>' : ''}</span>` : ''}
+            ${g.s ? `<span class="row-actions"><span class="muted">${g.s.booked_count}/${g.s.capacity} booked${g.s.is_closed ? ' · <span class="chip chip-rejected">Closed</span>' : ''}</span>
+              ${!g.s.booked_count && !g.rows.length ? `<button type="button" class="btn-link danger" data-hmu-slot-del="${g.s.id}">Delete slot</button>` : ''}</span>` : ''}
           </div>
           ${g.rows.length ? `
           <table class="table slot-table">
@@ -1256,6 +1320,24 @@ const HMU_STATUS_CONFIRM = {
   cancelled: { title: 'Cancel this HMU booking?', text: 'The seat is released back to the HMU slot. The student can book HMU again.', ok: 'Cancel HMU', danger: true },
 };
 $('hmuList').addEventListener('click', (e) => {
+  const delBtn = e.target.closest('[data-hmu-slot-del]');
+  if (delBtn) {
+    clearAlert('hmuListAlert');
+    const slot = hmuListSlots.find(s => s.id === delBtn.dataset.hmuSlotDel);
+    openDialog({
+      title: 'Delete this HMU slot?',
+      body: `<p><strong>${escapeHtml(slot.school)}</strong> · HMU ${escapeHtml(fmtWhen(slot.slot_start))} will be removed. Students will no longer see it.</p><p class="muted">This can’t be undone. “Generate / Rebuild HMU slots” will create it again if the date is still in range.</p>`,
+      okText: 'Delete slot', danger: true,
+      onOk: async () => {
+        const { error } = await sb.rpc('staff_delete_hmu_slot', { p_slot_id: slot.id });
+        if (error) { showErr('dialogAlert', error); if (error.message === 'slot_not_found' || error.message === 'slot_has_bookings') loadHmuList(); return false; }
+        alertBox('hmuListAlert', `Deleted the ${escapeHtml(fmtRange(slot.slot_start, slot.slot_end))} HMU slot.`, 'success');
+        loadHmuList();
+        return true;
+      },
+    });
+    return;
+  }
   const btn = e.target.closest('[data-hmu-status]');
   if (!btn) return;
   clearAlert('hmuListAlert');
