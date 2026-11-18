@@ -1343,10 +1343,13 @@ function renderHmuList(){
             <tr class="${s.is_closed ? 'row-closed' : ''}">
               <td data-label="Time"><strong>${escapeHtml(fmtRange(s.slot_start, s.slot_end))}</strong></td>
               <td data-label="Booked students">${people.length ? people.map(hmuPersonHtml).join('') : '<span class="muted">—</span>'}</td>
-              <td data-label="Capacity">${s.capacity}</td>
+              <td data-label="Capacity"><span class="cap-edit"><input type="number" min="${s.booked_count}" max="50" value="${s.capacity}" data-hmu-cap-input="${s.id}" aria-label="Capacity"><button type="button" class="btn-link" data-hmu-cap-save="${s.id}">Save</button></span></td>
               <td data-label="Left">${Math.max(s.capacity - s.booked_count, 0)}</td>
               <td data-label="Status">${slotStatusChip(s)}</td>
-              <td>${!s.booked_count && !people.length ? `<button type="button" class="btn-link danger" data-hmu-slot-del="${s.id}">Delete</button>` : ''}</td>
+              <td><div class="row-actions">
+                <button type="button" class="btn-link" data-hmu-slot-toggle="${s.id}">${s.is_closed ? 'Reopen' : 'Close'}</button>
+                ${!s.booked_count && !people.length ? `<button type="button" class="btn-link danger" data-hmu-slot-del="${s.id}">Delete</button>` : ''}
+              </div></td>
             </tr>`; }).join('')}
           ${others.map(b => `
             <tr>
@@ -1365,7 +1368,47 @@ const HMU_STATUS_CONFIRM = {
   no_show: { title: 'Mark HMU as no-show?', text: 'The seat is released back to the HMU slot.', ok: 'Mark no-show', danger: true },
   cancelled: { title: 'Cancel this HMU booking?', text: 'The seat is released back to the HMU slot. The student can book HMU again.', ok: 'Cancel HMU', danger: true },
 };
-$('hmuList').addEventListener('click', (e) => {
+// Change one HMU slot (capacity and/or closed). Returns false when it failed.
+async function updateHmuSlot(slot, changes, alertId){
+  const { error } = await sb.rpc('staff_update_hmu_slot', { p_slot_id: slot.id, ...changes });
+  if (error) { showErr(alertId, error); if (error.message === 'slot_not_found') loadHmuList(); return false; }
+  loadHmuList();
+  return true;
+}
+
+$('hmuList').addEventListener('click', async (e) => {
+  const capBtn = e.target.closest('[data-hmu-cap-save]');
+  if (capBtn) {
+    clearAlert('hmuListAlert');
+    const slot = hmuSlotRows.find(s => s.id === capBtn.dataset.hmuCapSave);
+    const val = Number(document.querySelector(`[data-hmu-cap-input="${slot.id}"]`).value);
+    if (!Number.isInteger(val) || val < 0) { alertBox('hmuListAlert', 'Enter a capacity of 0 or more.', 'error'); return; }
+    capBtn.disabled = true;
+    const ok = await updateHmuSlot(slot, { p_capacity: val }, 'hmuListAlert');
+    capBtn.disabled = false;
+    if (ok) alertBox('hmuListAlert', `The ${escapeHtml(fmtRange(slot.slot_start, slot.slot_end))} HMU slot now takes ${plural(val, 'student')}.`, 'success');
+    return;
+  }
+  const toggleBtn = e.target.closest('[data-hmu-slot-toggle]');
+  if (toggleBtn) {
+    clearAlert('hmuListAlert');
+    const slot = hmuSlotRows.find(s => s.id === toggleBtn.dataset.hmuSlotToggle);
+    const closing = !slot.is_closed;
+    const when = escapeHtml(fmtRange(slot.slot_start, slot.slot_end));
+    const run = async (alertId) => {
+      const ok = await updateHmuSlot(slot, { p_is_closed: closing }, alertId);
+      if (ok) alertBox('hmuListAlert', closing ? `The ${when} HMU slot is closed. Students can no longer book it.` : `The ${when} HMU slot is open again.`, 'success');
+      return ok;
+    };
+    if (closing && slot.booked_count) {
+      openDialog({
+        title: 'Close this HMU slot?',
+        body: `<p>${plural(slot.booked_count, 'student')} ${slot.booked_count === 1 ? 'is' : 'are'} booked at ${when}. Closing stops new bookings but does <strong>not</strong> cancel them.</p>`,
+        okText: 'Close slot', danger: true, onOk: () => run('dialogAlert'),
+      });
+    } else run('hmuListAlert');
+    return;
+  }
   const delBtn = e.target.closest('[data-hmu-slot-del]');
   if (delBtn) {
     clearAlert('hmuListAlert');
