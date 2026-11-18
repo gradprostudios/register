@@ -269,3 +269,14 @@ button, input, select, textarea{font-family:inherit;}
   .table td{border:none; padding:4px 12px;}
   .table td[data-label]::before{content:attr(data-label); display:block; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
 }
+
+/* ---------- Hair & Makeup ---------- */
+#hmuForm.disabled{opacity:.45; pointer-events:none;}
+.hmu-top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:6px;}
+.hmu-top .switch-row{margin-bottom:10px;}
+#hmuCapacity{margin:0 0 16px;}
+.hmu-dates-note{padding:10px 12px; border-radius:8px; border:1.5px dashed var(--border); color:var(--muted); font-size:13px; margin:0 0 14px; line-height:1.5;}
+.hmu-slot-head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--surface);}
+.hmu-slot-head .muted{font-size:12.5px;}
+.hmu-slot-empty{padding:8px 16px 12px; color:var(--muted); font-size:12.5px; border-bottom:1px solid var(--line);}
+.chip-needs_rebook{background:transparent; color:var(--red-text); border:1.5px dashed var(--red);}
