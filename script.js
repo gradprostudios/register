@@ -1838,6 +1838,7 @@ function fmtHmuDay(iso){
   return new Date(iso).toLocaleDateString('en-US', { timeZone: MANILA_TZ, weekday: 'short', month: 'short', day: 'numeric' });
 }
 function hmuWhen(h){ return `${fmtHmuDay(h.slot_start)} · ${fmtSlotRange(h.slot_start, h.slot_end)}`; }
+function hoursText(n){ return `${n} hour${n === 1 ? '' : 's'}`; }
 // Inside the cutoff (or already started) the student can't change or cancel online.
 function hmuLocked(){
   const h = hmuState && hmuState.hmu;
@@ -1875,7 +1876,7 @@ function renderHmu(){
     const started = new Date(h.slot_start).getTime() <= Date.now();
     const note = started ? 'Your Hair &amp; Makeup time has started.'
       : locked ? 'It’s too close to your Hair &amp; Makeup time to change it online. Please contact the studio.'
-      : cutoff ? `Changes allowed until ${cutoff} hour${cutoff === 1 ? '' : 's'} before your slot.`
+      : cutoff ? `Changes allowed until ${hoursText(cutoff)} before your slot.`
       : 'You can change or cancel any time before your slot starts.';
     html = `
       ${title('Booked', 'confirmed')}
@@ -1907,7 +1908,7 @@ function renderHmu(){
       ${title('Optional')}
       <div class="notice-body">${linked ? 'Get your hair and makeup done by our team before your pictorial. It is on your pictorial day and finishes before your pictorial starts.' : 'Get your hair and makeup done by our team for your graduation photos. Pick any open time.'}</div>
       ${hmuPicking ? '' : '<div class="appt-actions"><button type="button" class="btn btn-primary btn-inline" data-hmu="pick">Book Hair &amp; Makeup</button></div>'}
-      ${cutoff ? `<div class="notice-meta">Booking and changes close ${cutoff} hour${cutoff === 1 ? '' : 's'} before each slot.</div>` : ''}`;
+      ${cutoff ? `<div class="notice-meta">Booking and changes close ${hoursText(cutoff)} before each slot.</div>` : ''}`;
   } else {
     box.innerHTML = '';
     return;
@@ -1919,7 +1920,7 @@ function hmuPickerHtml(){
   const linked = hmuState.mode === 'linked';
   const current = hmuState.hmu && hmuState.hmu.slot_start;
   const byDay = {};
-  hmuSlots.forEach(s => { (byDay[manilaDateKey(s.slot_start)] = byDay[manilaDateKey(s.slot_start)] || []).push(s); });
+  hmuSlots.forEach(s => { const d = manilaDateKey(s.slot_start); (byDay[d] = byDay[d] || []).push(s); });
   const days = Object.keys(byDay).sort();
   const list = days.length ? days.map(d => `
       <div class="hmu-day">${escapeHtml(fmtHmuDay(byDay[d][0].slot_start))}</div>
@@ -1988,10 +1989,9 @@ document.getElementById('hmuSection').addEventListener('click', async (e) => {
     hmuBusy = false;
     if (error) {
       if (error.handled) return;
-      const code = error.message;
-      alertBox('hmuAlert', escapeHtml(hmuErrText(error)), 'error');
+      hmuFail(error);
       // Seats or days filled up meanwhile: reload the times and let the student pick again.
-      if (['slot_full', 'day_full', 'slot_unavailable', 'slot_not_found', 'same_slot'].includes(code)) {
+      if (['slot_full', 'day_full', 'slot_unavailable', 'slot_not_found', 'same_slot'].includes(error.message)) {
         hmuPickId = null;
         if (await loadHmuSlots()) renderHmu();
         return;

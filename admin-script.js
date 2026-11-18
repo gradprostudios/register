@@ -22,7 +22,7 @@ const ERROR_TEXT = {
   capacity_below_booked: 'Capacity can’t be lower than the number of students already booked in that slot.',
   slot_not_found: 'That slot no longer exists.',
   school_has_bookings: 'Students are still booked for this school (pictorial or Hair & Makeup). Move or cancel them first, then delete.',
-  slot_has_bookings:'Someone is booked in that slot. Move or cancel them first, then delete it.',
+  slot_has_bookings: 'Someone is booked in that slot. Move or cancel them first, then delete it.',
   slot_has_history: 'That slot has past booking records, so it can’t be deleted. Close it instead.',
   invalid_status: 'Invalid booking status.',
   slot_full: 'The chosen slot is already full.',
@@ -42,6 +42,8 @@ function errText(error, fallback){
   if (m.startsWith('max_exceeds_capacity:')) return `Max students per day can’t be more than ${m.split(':')[1]} (HMU staff × hourly slots per day).`;
   return ERROR_TEXT[m] || m || fallback || 'Something went wrong. Please try again.';
 }
+// The list on screen is out of date when a delete fails with one of these: reload it.
+const STALE_SLOT_ERRORS = ['slot_not_found', 'slot_has_bookings'];
 function showErr(alertId, error, fallback){
   if (error && error.message === 'not_staff') { forceSignOut(ERROR_TEXT.not_staff); return; }
   alertBox(alertId, escapeHtml(errText(error, fallback)), 'error');
@@ -72,6 +74,10 @@ function fmtClock(t){
 const DOW = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const STATUS_LABEL = { booked: 'Booked', completed: 'Completed', no_show: 'No-show', cancelled: 'Cancelled', pending: 'Pending', approved: 'Approved', rejected: 'Rejected', needs_rebook: 'Needs rebook' };
 function chip(status){ return `<span class="chip chip-${escapeHtml(status)}">${escapeHtml(STATUS_LABEL[status] || status)}</span>`; }
+// '1 slot', '12 slots'
+function plural(n, word){ n = n || 0; return `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`; }
+// School names are compared without case or outer spaces; the DB keeps one stored spelling.
+function sameSchool(a, b){ return (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase(); }
 
 function setBusy(btn, busy, text){
   if (busy) { btn.dataset.idle = btn.textContent; btn.disabled = true; btn.innerHTML = `<span class="spinner"></span>${escapeHtml(text || 'Working…')}`; }
@@ -560,12 +566,13 @@ $('settingsTable').addEventListener('click', (e) => {
         const { data, error } = await sb.rpc('staff_delete_school_setup', { p_school: school });
         if (error) { showErr('dialogAlert', error); return false; }
         const r = data || {};
-        const n = (x) => (x || 0).toLocaleString();
+        const deleted = `${plural(r.slots_deleted, 'pictorial slot')} and ${plural(r.hmu_slots_deleted, 'HMU slot')}`;
         if (r.removed) {
-          alertBox('settingsAlert', `Deleted the setup of <strong>${escapeHtml(school)}</strong> (${n(r.slots_deleted)} pictorial slot${r.slots_deleted === 1 ? '' : 's'}, ${n(r.hmu_slots_deleted)} HMU slot${r.hmu_slots_deleted === 1 ? '' : 's'}).`, 'success');
+          alertBox('settingsAlert', `Deleted the setup of <strong>${escapeHtml(school)}</strong> (${deleted}).`, 'success');
         } else {
-          alertBox('settingsAlert', `Deleted ${n(r.slots_deleted)} pictorial and ${n(r.hmu_slots_deleted)} HMU slots of <strong>${escapeHtml(school)}</strong>. `
-            + `${n((r.slots_kept || 0) + (r.hmu_slots_kept || 0))} slot${(r.slots_kept || 0) + (r.hmu_slots_kept || 0) === 1 ? ' has' : 's have'} past booking records, so the settings were kept and booking + HMU are now <strong>OFF</strong> for this school.`, 'warn');
+          const kept = (r.slots_kept || 0) + (r.hmu_slots_kept || 0);
+          alertBox('settingsAlert', `Deleted ${deleted} of <strong>${escapeHtml(school)}</strong>. `
+            + `${plural(kept, 'slot')} still ${kept === 1 ? 'has' : 'have'} past booking records, so the settings were kept and pictorial booking and HMU are now <strong>off</strong> for this school.`, 'warn');
         }
         if ($('setSchool').value === school) $('setSchool').value = '';
         slotRows = []; slotDay = null;
@@ -741,7 +748,7 @@ $('slotsList').addEventListener('click', async (e) => {
       okText: 'Delete slot', danger: true,
       onOk: async () => {
         const { error } = await sb.rpc('staff_delete_slot', { p_slot_id: slot.id });
-        if (error) { showErr('dialogAlert', error); if (error.message === 'slot_not_found' || error.message === 'slot_has_bookings') loadSlots(); return false; }
+        if (error) { showErr('dialogAlert', error); if (STALE_SLOT_ERRORS.includes(error.message)) loadSlots(); return false; }
         alertBox('slotsAlert', `Deleted the ${escapeHtml(fmtRange(slot.slot_start, slot.slot_end))} slot.`, 'success');
         loadSlots();
         return true;
@@ -956,8 +963,7 @@ PAGE_LOADERS.bookings = () => { clearAlert('bookingsAlert'); loadBookings(); };
    Settings live in hmu_settings (staff edit it directly), except staff count and the daily
    maximum, which go through their RPCs. Linked mode = the school has pictorial booking on.
    ================================================================ */
-const HMU_HOURS = [];
-for (let h = 5; h <= 21; h++) HMU_HOURS.push(String(h).padStart(2, '0') + ':00');
+const HMU_HOURS = Array.from({ length: 17 }, (_, i) => String(i + 5).padStart(2, '0') + ':00'); // 5 AM to 9 PM
 let hmuBlocked = [];      // open-mode blocked dates in the form, sorted 'YYYY-MM-DD'
 
 async function loadHmuSettings(){
@@ -966,21 +972,14 @@ async function loadHmuSettings(){
   hmuRows = data || [];
   return true;
 }
-function hmuFor(school){
-  const k = (school || '').trim().toLowerCase();
-  return hmuRows.find(r => r.school.trim().toLowerCase() === k);
-}
-function hmuLinked(school){
-  const k = (school || '').trim().toLowerCase();
-  return settingsRows.some(r => r.school.trim().toLowerCase() === k && r.is_enabled);
-}
+function hmuFor(school){ return hmuRows.find(r => sameSchool(r.school, school)); }
+function pictorialFor(school){ return settingsRows.find(r => sameSchool(r.school, school)); }
+function hmuLinked(school){ const p = pictorialFor(school); return !!(p && p.is_enabled); }
 // The DB functions match the school name exactly, so keep the spelling already stored:
 // the HMU row's, else the pictorial settings' (linked mode reads its dates from there).
 function hmuSchoolName(school){
-  const k = (school || '').trim().toLowerCase();
-  const h = hmuFor(school);
-  const p = settingsRows.find(r => r.school.trim().toLowerCase() === k);
-  return h ? h.school : p ? p.school : school;
+  const stored = hmuFor(school) || pictorialFor(school);
+  return stored ? stored.school : school;
 }
 
 // 'Mon–Sat' for a run of days, otherwise 'Mon, Wed, Fri'.
@@ -1061,10 +1060,10 @@ function fillHmuForm(){
   $('hmuDatesOpen').classList.toggle('hidden', !school || linked);
   $('hmuDatesLinked').classList.toggle('hidden', !linked);
   if (linked) {
-    const p = settingsRows.find(r => r.school.trim().toLowerCase() === school.trim().toLowerCase());
+    const p = pictorialFor(school);
     const nBlocked = (p.blocked_dates || []).length;
     $('hmuDatesLinked').innerHTML = `Dates follow the pictorial schedule (<strong>${escapeHtml(fmtDay(p.start_date, { weekday: undefined }))} – ${escapeHtml(fmtDay(p.end_date, { weekday: undefined }))}, ${escapeHtml(daysLabel(p.days_of_week))}</strong>)`
-      + (nBlocked ? `, skipping its ${nBlocked} blocked date${nBlocked === 1 ? '' : 's'}` : '') + '. Change them in Slot Settings.';
+      + (nBlocked ? `, skipping its ${plural(nBlocked, 'blocked date')}` : '') + '. Change them in Slot Settings.';
   }
   $('hmuSaveBtn').disabled = !school;
   $('hmuGenBtn').disabled = !row.school;
@@ -1080,7 +1079,7 @@ function updateHmuCapacity(){
   $('hmuMax').disabled = !(per > 0 && cap > 0);
   if (!school) { $('hmuCapacity').textContent = '—'; return; }
   if (!per) { $('hmuCapacity').textContent = 'Set the opening and closing hours to see how many students fit per day.'; return; }
-  $('hmuCapacity').innerHTML = `${per} one-hour slot${per === 1 ? '' : 's'} a day × ${Number.isInteger(staff) ? staff : 0} staff = <strong>${cap} students per day</strong>`
+  $('hmuCapacity').innerHTML = `${plural(per, 'one-hour slot')} a day × ${Number.isInteger(staff) ? staff : 0} staff = <strong>${cap} students per day</strong>`
     + `<br><span class="preview-sub">Max possible: ${cap}${$('hmuMax').value ? ` · daily limit set to ${escapeHtml($('hmuMax').value)}` : ' · no daily limit'}</span>`;
 }
 $('hmuForm').addEventListener('input', updateHmuCapacity);
@@ -1144,7 +1143,7 @@ async function saveHmu(alertId){
     const { data, error: e1 } = await sb.rpc('staff_set_hmu_staff_count', { p_school: name, p_count: s.staff });
     if (e1) { showErr(alertId, e1, 'Settings saved, but the staff count could not be updated.'); await loadHmuSettings(); return null; }
     const r = data || {};
-    notes.push(`Staff count set to ${s.staff}: ${r.daily_capacity ?? 0} students per day${r.updated_slots ? `, ${r.updated_slots} upcoming slot${r.updated_slots === 1 ? '' : 's'} updated` : ''}.`);
+    notes.push(`Staff count set to ${s.staff}: ${r.daily_capacity ?? 0} students per day${r.updated_slots ? `, ${plural(r.updated_slots, 'upcoming slot')} updated` : ''}.`);
     if (existing && existing.max_per_day !== null && r.max_per_day !== null && r.max_per_day < existing.max_per_day) {
       notes.push(`The daily maximum was lowered to ${r.max_per_day} to fit.`);
     }
@@ -1166,8 +1165,8 @@ async function saveHmu(alertId){
 $('hmuSchool').addEventListener('change', () => {
   clearAlert('hmuAlert');
   fillHmuForm();
-  const name = hmuFor($('hmuSchool').value) && hmuFor($('hmuSchool').value).school;
-  if (name && $('hmuListSchool').value !== name) { $('hmuListSchool').value = name; $('hmuListDate').value = ''; loadHmuList(); }
+  const row = hmuFor($('hmuSchool').value);
+  if (row && $('hmuListSchool').value !== row.school) { $('hmuListSchool').value = row.school; $('hmuListDate').value = ''; loadHmuList(); }
 });
 
 $('hmuForm').addEventListener('submit', async (e) => {
@@ -1205,8 +1204,8 @@ $('hmuGenBtn').addEventListener('click', () => {
       if (rpcError) { showErr('dialogAlert', rpcError); return false; }
       const r = data || {};
       let html = `HMU slots ready for <strong>${escapeHtml(saved.name)}</strong> (${r.mode === 'linked' ? 'linked to pictorial' : 'open schedule'}): `
-        + `<strong>${(r.slots || 0).toLocaleString()}</strong> upcoming slot${r.slots === 1 ? '' : 's'} made or updated, ${(r.removed || 0).toLocaleString()} unbooked old slot${r.removed === 1 ? '' : 's'} removed.`;
-      if (r.closed_leftovers) html += ` Closed ${r.closed_leftovers} booked slot${r.closed_leftovers === 1 ? '' : 's'} outside the new schedule (the students stay booked; check the HMU list).`;
+        + `<strong>${plural(r.slots, 'upcoming slot')}</strong> made or updated, ${plural(r.removed, 'unbooked old slot')} removed.`;
+      if (r.closed_leftovers) html += ` Closed ${plural(r.closed_leftovers, 'booked slot')} outside the new schedule. Those students stay booked; check the HMU list.`;
       if (saved.notes.length) html += '<br>' + saved.notes.join(' ');
       if (!r.slots) html += '<br>No slots were made. Check that the dates are in the future and the days of the week are right.';
       alertBox('hmuAlert', html, saved.warn || r.closed_leftovers || !r.slots ? 'warn' : 'success');
@@ -1256,7 +1255,8 @@ function renderHmuList(){
   const day = $('hmuListDate').value;
   const title = escapeHtml(fmtDay(day, { weekday: 'long', month: 'long', year: 'numeric' }));
   const schools = [...new Set([...hmuListSlots.map(s => s.school), ...hmuListRows.map(b => b.school)])].sort((a, b) => a.localeCompare(b));
-  const active = hmuListRows.filter(b => b.status === 'booked' || b.status === 'completed').length;
+  const holdsSeat = (b) => b.status === 'booked' || b.status === 'completed';
+  const active = hmuListRows.filter(holdsSeat).length;
   const rebook = hmuListRows.filter(b => b.status === 'needs_rebook').length;
   $('hmuListSummary').innerHTML = (hmuListSlots.length || hmuListRows.length)
     ? `<span><strong>${title}</strong></span><span><strong>${active}</strong> booked</span>`
@@ -1270,7 +1270,7 @@ function renderHmuList(){
     const slots = hmuListSlots.filter(s => s.school === school);
     const rows = hmuListRows.filter(b => b.school === school);
     const h = hmuFor(school) || {};
-    const dayActive = rows.filter(b => b.status === 'booked' || b.status === 'completed').length;
+    const dayActive = rows.filter(holdsSeat).length;
     const cap = slots.reduce((a, s) => a + (s.is_closed ? 0 : s.capacity), 0);
     const limit = h.max_per_day ? `${h.max_per_day} max per day` : `${cap} daily capacity`;
     const linked = hmuLinked(school);
@@ -1287,7 +1287,7 @@ function renderHmuList(){
         </div>
         ${groups.map(g => `
           <div class="hmu-slot-head">
-            <strong>${g.s ? escapeHtml(fmtRange(g.s.slot_start, g.s.slot_end)) : 'Other'}</strong>
+            <strong>${g.s ? escapeHtml(fmtRange(g.s.slot_start, g.s.slot_end)) : 'Other times'}</strong>
             ${g.s ? `<span class="row-actions"><span class="muted">${g.s.booked_count}/${g.s.capacity} booked${g.s.is_closed ? ' · <span class="chip chip-rejected">Closed</span>' : ''}</span>
               ${!g.s.booked_count && !g.rows.length ? `<button type="button" class="btn-link danger" data-hmu-slot-del="${g.s.id}">Delete slot</button>` : ''}</span>` : ''}
           </div>
@@ -1330,7 +1330,7 @@ $('hmuList').addEventListener('click', (e) => {
       okText: 'Delete slot', danger: true,
       onOk: async () => {
         const { error } = await sb.rpc('staff_delete_hmu_slot', { p_slot_id: slot.id });
-        if (error) { showErr('dialogAlert', error); if (error.message === 'slot_not_found' || error.message === 'slot_has_bookings') loadHmuList(); return false; }
+        if (error) { showErr('dialogAlert', error); if (STALE_SLOT_ERRORS.includes(error.message)) loadHmuList(); return false; }
         alertBox('hmuListAlert', `Deleted the ${escapeHtml(fmtRange(slot.slot_start, slot.slot_end))} HMU slot.`, 'success');
         loadHmuList();
         return true;
