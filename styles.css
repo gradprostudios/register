@@ -1174,7 +1174,7 @@ body.kb-open .cookie-banner, body.kb-open .theme-toggle.floating{display:none !i
 
 /* ---------- Hair & Makeup (Appointments tab) ---------- */
 .hmu-card{margin-top:4px;}
-.hmu-warn{margin-top:8px; padding:10px 12px; border-radius:8px; border:1.5px dashed #B22222; background:rgba(178,34,34,0.06); font-size:12.5px; line-height:1.5;}
+.hmu-warn{margin-top:8px; padding:10px 12px; border-radius:8px; border:1.5px dashed var(--danger); background:rgba(178,34,34,0.06); font-size:12.5px; line-height:1.5;}
 .hmu-confirm{flex-wrap:wrap;}
 .hmu-picker{margin-top:16px; padding-top:14px; border-top:1px solid var(--line-soft);}
 .hmu-pick-head{font-weight:800; font-size:14px; margin-bottom:10px;}
