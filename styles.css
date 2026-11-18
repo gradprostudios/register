@@ -1171,3 +1171,13 @@ body.kb-open .cookie-banner, body.kb-open .theme-toggle.floating{display:none !i
 .addu-extra > div{min-height:0; overflow:hidden;}
 .addu-extra.open{grid-template-rows:1fr; opacity:1; visibility:visible; transition-delay:0s;}
 .addu-extra.open > div{overflow:visible;} /* so the Minor suggestion list is not clipped */
+
+/* ---------- Hair & Makeup (Appointments tab) ---------- */
+.hmu-card{margin-top:4px;}
+.hmu-warn{margin-top:8px; padding:10px 12px; border-radius:8px; border:1.5px dashed #B22222; background:rgba(178,34,34,0.06); font-size:12.5px; line-height:1.5;}
+.hmu-confirm{flex-wrap:wrap;}
+.hmu-picker{margin-top:16px; padding-top:14px; border-top:1px solid var(--line-soft);}
+.hmu-pick-head{font-weight:800; font-size:14px; margin-bottom:10px;}
+.hmu-day{font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:12px 0 8px;}
+.hmu-times{display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px;}
+.hmu-confirm .btn-inline + .btn-inline{margin-left:0;}

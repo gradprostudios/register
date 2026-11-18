@@ -1597,6 +1597,8 @@ async function refreshBooking(){
   renderBookingReminders();
   renderDashboardPictorial(error);
   renderAppointments(error);
+  // A pictorial change can move or release the Hair & Makeup slot, so reload it too.
+  refreshHmu();
 }
 
 // Whole days from today to the pictorial, both counted as Philippine calendar dates.
@@ -1796,6 +1798,213 @@ document.getElementById('appointmentsList').addEventListener('click', async (e) 
   if (error) { btn.disabled = false; rpcFail('apptAlert', error); return; }
   alertBox('apptAlert', 'Your request was withdrawn.', 'success');
   await refreshBooking();
+});
+
+/* -------------------- HAIR & MAKEUP (optional add-on) -------------------- */
+// Linked mode: the school has pictorial booking, so HMU is on the pictorial day and ends before it.
+// Open mode: any open HMU slot. The server enforces every rule; this only shows the state.
+let hmuState = null;
+let hmuPicking = false;        // the time picker is open
+let hmuSlots = [];             // get_hmu_availability rows while picking
+let hmuPickId = null;
+let hmuConfirmCancel = false;  // the inline "cancel your HMU?" step is showing
+let hmuBusy = false;
+
+const HMU_ERROR_TEXT = {
+  no_pictorial_booking: 'Book your pictorial schedule first to add Hair & Makeup.',
+  slot_not_found: 'That Hair & Makeup time no longer exists. Please pick another time.',
+  wrong_school: 'That Hair & Makeup time is for a different school.',
+  hmu_closed: 'Hair & Makeup booking is closed for your school.',
+  slot_unavailable: 'That Hair & Makeup time is no longer available. Please pick another time.',
+  past_cutoff: 'It’s too close to your Hair & Makeup time to change it online. Please contact the studio.',
+  hmu_must_be_before_pictorial: 'Hair & Makeup must be on your pictorial day and finish before your pictorial starts.',
+  same_slot: 'That is already your Hair & Makeup time.',
+  slot_full: 'That Hair & Makeup time just filled up. Please pick another time.',
+  day_full: 'Hair & Makeup is fully booked on that day. Please pick another day.',
+  already_booked: 'You already have a Hair & Makeup booking.',
+  no_active_hmu: 'You don’t have an active Hair & Makeup booking.',
+  hmu_started: 'Your Hair & Makeup time has already started, so it can’t be changed online.',
+};
+function hmuErrText(error){
+  const m = (error && error.message) || '';
+  return HMU_ERROR_TEXT[m] || ERROR_TEXT[m] || 'Something went wrong. Please try again.';
+}
+function hmuFail(error){
+  if (error && error.handled) return;
+  alertBox('hmuAlert', escapeHtml(hmuErrText(error)), 'error');
+}
+// 'Tue, Dec 16'
+function fmtHmuDay(iso){
+  return new Date(iso).toLocaleDateString('en-US', { timeZone: MANILA_TZ, weekday: 'short', month: 'short', day: 'numeric' });
+}
+function hmuWhen(h){ return `${fmtHmuDay(h.slot_start)} · ${fmtSlotRange(h.slot_start, h.slot_end)}`; }
+// Inside the cutoff (or already started) the student can't change or cancel online.
+function hmuLocked(){
+  const h = hmuState && hmuState.hmu;
+  if (!h) return false;
+  return Date.now() >= new Date(h.slot_start).getTime() - (Number(hmuState.cutoff_hours) || 0) * 3600000;
+}
+
+async function refreshHmu(){
+  const token = getSession();
+  if (!token) return;
+  const { data, error } = await rpc('student_hmu_state', { p_token: token });
+  if (error) {
+    if (error.handled) return;
+    console.error(error); // HMU is optional: on any error the section simply stays hidden
+    hmuState = null;
+  } else {
+    hmuState = data;
+  }
+  if (!hmuState || !hmuState.enabled || (hmuState.hmu && hmuLocked())) hmuPicking = false;
+  renderHmu();
+}
+
+function renderHmu(){
+  const box = document.getElementById('hmuSection');
+  const st = hmuState;
+  if (!st || !st.enabled) { box.innerHTML = ''; return; }
+  const linked = st.mode === 'linked';
+  const h = st.hmu;
+  const cutoff = Number(st.cutoff_hours) || 0;
+  const title = (status, cls) => `<div class="notice-title">Hair &amp; Makeup <span class="appt-status${cls ? ' ' + cls : ''}">${escapeHtml(status)}</span></div>`;
+  let html;
+
+  if (h) {
+    const locked = hmuLocked();
+    const started = new Date(h.slot_start).getTime() <= Date.now();
+    const note = started ? 'Your Hair &amp; Makeup time has started.'
+      : locked ? 'It’s too close to your Hair &amp; Makeup time to change it online. Please contact the studio.'
+      : cutoff ? `Changes allowed until ${cutoff} hour${cutoff === 1 ? '' : 's'} before your slot.`
+      : 'You can change or cancel any time before your slot starts.';
+    html = `
+      ${title('Booked', 'confirmed')}
+      <div class="appt-when">${escapeHtml(hmuWhen(h))}</div>
+      <div class="notice-body">Philippine time${linked && st.pictorial_start ? ` · Before your <span class="nowrap">${escapeHtml(fmtManilaTime(st.pictorial_start))}</span> pictorial` : ''}</div>
+      ${hmuConfirmCancel && !locked ? `
+        <div class="appt-request hmu-confirm">
+          Cancel your Hair &amp; Makeup? Your slot will be released to other students.
+          <button type="button" class="btn btn-ghost btn-inline" data-hmu="keep">Keep it</button>
+          <button type="button" class="btn btn-primary btn-inline" data-hmu="cancel-yes">Yes, cancel</button>
+        </div>` : ''}
+      ${locked || hmuConfirmCancel || hmuPicking ? '' : `<div class="appt-actions">
+        <button type="button" class="btn btn-primary btn-inline" data-hmu="pick">Change time</button>
+        <button type="button" class="btn btn-ghost btn-inline" data-hmu="cancel">Cancel</button>
+      </div>`}
+      <div class="notice-meta">${note}</div>`;
+  } else if (st.needs_rebook) {
+    html = `
+      ${title('Pick a new time')}
+      <div class="hmu-warn">Your pictorial schedule changed, so your Hair &amp; Makeup slot was released. Please pick a new time.</div>
+      ${!st.can_book ? '<div class="notice-meta">Book your pictorial schedule first, then pick a Hair &amp; Makeup time.</div>'
+        : hmuPicking ? '' : '<div class="appt-actions"><button type="button" class="btn btn-primary btn-inline" data-hmu="pick">Book Hair &amp; Makeup</button></div>'}`;
+  } else if (linked && !st.has_pictorial) {
+    html = `
+      ${title('Optional')}
+      <div class="notice-body">Book your pictorial schedule first to add Hair &amp; Makeup.</div>`;
+  } else if (st.can_book) {
+    html = `
+      ${title('Optional')}
+      <div class="notice-body">${linked ? 'Get your hair and makeup done by our team before your pictorial. It is on your pictorial day and finishes before your pictorial starts.' : 'Get your hair and makeup done by our team for your graduation photos. Pick any open time.'}</div>
+      ${hmuPicking ? '' : '<div class="appt-actions"><button type="button" class="btn btn-primary btn-inline" data-hmu="pick">Book Hair &amp; Makeup</button></div>'}
+      ${cutoff ? `<div class="notice-meta">Booking and changes close ${cutoff} hour${cutoff === 1 ? '' : 's'} before each slot.</div>` : ''}`;
+  } else {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `<div class="notice-row full hmu-card">${html}${hmuPicking ? hmuPickerHtml() : ''}</div>`;
+}
+
+function hmuPickerHtml(){
+  const linked = hmuState.mode === 'linked';
+  const current = hmuState.hmu && hmuState.hmu.slot_start;
+  const byDay = {};
+  hmuSlots.forEach(s => { (byDay[manilaDateKey(s.slot_start)] = byDay[manilaDateKey(s.slot_start)] || []).push(s); });
+  const days = Object.keys(byDay).sort();
+  const list = days.length ? days.map(d => `
+      <div class="hmu-day">${escapeHtml(fmtHmuDay(byDay[d][0].slot_start))}</div>
+      <div class="hmu-times">${byDay[d].map(s => {
+        const mine = current && new Date(current).getTime() === new Date(s.slot_start).getTime();
+        const full = s.slots_left <= 0;
+        const sel = s.slot_id === hmuPickId;
+        return `<button type="button" class="sched-time${sel ? ' selected' : ''}" data-hmu-slot="${s.slot_id}" ${mine || full ? 'disabled' : ''} aria-pressed="${sel}">
+          <span>${escapeHtml(fmtSlotRange(s.slot_start, s.slot_end))}</span>
+          <span class="sched-left">${mine ? 'Your time' : full ? 'Full' : `${s.slots_left} left`}</span></button>`;
+      }).join('')}</div>`).join('')
+    : `<div class="stub-empty">No Hair &amp; Makeup slots available.${linked ? ' Hair &amp; Makeup must finish before your pictorial; try an earlier pictorial time.' : ''}</div>`;
+  return `
+    <div class="hmu-picker">
+      <div class="hmu-pick-head">${hmuState.hmu ? 'Pick a new Hair &amp; Makeup time' : 'Pick a Hair &amp; Makeup time'}</div>
+      ${list}
+      <div class="appt-actions">
+        <button type="button" class="btn btn-ghost btn-inline" data-hmu="close">Close</button>
+        ${days.length ? `<button type="button" class="btn btn-primary btn-inline" data-hmu="confirm" ${hmuPickId && !hmuBusy ? '' : 'disabled'}>${hmuBusy ? '<span class="spinner"></span>Saving…' : 'Confirm Hair &amp; Makeup'}</button>` : ''}
+      </div>
+    </div>`;
+}
+
+async function loadHmuSlots(){
+  const { data, error } = await rpc('get_hmu_availability', { p_token: getSession() });
+  if (error) { hmuFail(error); hmuPicking = false; await refreshHmu(); return false; }
+  hmuSlots = data || [];
+  if (hmuPickId && !hmuSlots.some(s => s.slot_id === hmuPickId && s.slots_left > 0)) hmuPickId = null;
+  return true;
+}
+
+document.getElementById('hmuSection').addEventListener('click', async (e) => {
+  const slotBtn = e.target.closest('[data-hmu-slot]');
+  if (slotBtn) { hmuPickId = slotBtn.dataset.hmuSlot; renderHmu(); return; }
+  const btn = e.target.closest('[data-hmu]');
+  if (!btn || hmuBusy) return;
+  const act = btn.dataset.hmu;
+  clearAlert('hmuAlert');
+
+  if (act === 'pick') {
+    hmuConfirmCancel = false;
+    hmuPickId = null;
+    btn.disabled = true;
+    if (!(await loadHmuSlots())) return;
+    hmuPicking = true;
+    renderHmu();
+    return;
+  }
+  if (act === 'close') { hmuPicking = false; renderHmu(); return; }
+  if (act === 'cancel') { hmuPicking = false; hmuConfirmCancel = true; renderHmu(); return; }
+  if (act === 'keep') { hmuConfirmCancel = false; renderHmu(); return; }
+
+  if (act === 'cancel-yes') {
+    hmuBusy = true; btn.disabled = true;
+    const { error } = await rpc('student_cancel_hmu', { p_token: getSession() });
+    hmuBusy = false; hmuConfirmCancel = false;
+    if (error) { hmuFail(error); await refreshHmu(); return; }
+    alertBox('hmuAlert', 'Your Hair &amp; Makeup booking was cancelled.', 'success');
+    await refreshHmu();
+    return;
+  }
+
+  if (act === 'confirm' && hmuPickId) {
+    hmuBusy = true; renderHmu();
+    const { data, error } = await rpc('book_hmu', { p_token: getSession(), p_slot_id: hmuPickId });
+    hmuBusy = false;
+    if (error) {
+      if (error.handled) return;
+      const code = error.message;
+      alertBox('hmuAlert', escapeHtml(hmuErrText(error)), 'error');
+      // Seats or days filled up meanwhile: reload the times and let the student pick again.
+      if (['slot_full', 'day_full', 'slot_unavailable', 'slot_not_found', 'same_slot'].includes(code)) {
+        hmuPickId = null;
+        if (await loadHmuSlots()) renderHmu();
+        return;
+      }
+      hmuPicking = false;
+      await refreshHmu();
+      return;
+    }
+    const r = data || {};
+    hmuPicking = false; hmuPickId = null;
+    alertBox('hmuAlert', `Your Hair &amp; Makeup ${r.moved ? 'is now moved to' : 'is booked for'} <strong>${escapeHtml(hmuWhen(r))}</strong>.`, 'success');
+    await refreshHmu();
+  }
 });
 
 /* -------------------- SCHEDULE MODAL (book / reschedule / cancel) -------------------- */

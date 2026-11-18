@@ -67,6 +67,7 @@
       <button class="nav-btn active" data-page="settings">Slot Settings</button>
       <button class="nav-btn" data-page="slots">Slots</button>
       <button class="nav-btn" data-page="bookings">Bookings</button>
+      <button class="nav-btn" data-page="hmu">Hair &amp; Makeup</button>
       <button class="nav-btn" data-page="requests">Student Activity <span class="nav-badge hidden" id="reqBadge"></span></button>
       <button class="nav-btn" data-page="unbooked">Unbooked Students</button>
       <button class="nav-btn" data-page="announcements">Announcements</button>
@@ -203,6 +204,99 @@
       <div id="bookingsAlert"></div>
       <div id="bookingsSummary" class="summary"></div>
       <div class="table-wrap"><table class="table" id="bookingsTable"></table></div>
+    </section>
+
+    <!-- ===== HAIR & MAKEUP ===== -->
+    <section class="page" id="page-hmu">
+      <div class="page-head">
+        <div><div class="eyebrow">Optional add-on</div><h1 class="page-title">Hair &amp; Makeup</h1></div>
+      </div>
+      <p class="page-note">Hair &amp; Makeup (HMU) is off for every school until you turn it on here. It is separate from pictorial booking. If the school has pictorial booking on, HMU is <strong>linked</strong>: students book it on their pictorial day, ending before their pictorial. Otherwise it is an <strong>open</strong> schedule. Times are Philippine time (Asia/Manila).</p>
+
+      <div class="card">
+        <div id="hmuAlert"></div>
+        <div class="field">
+          <label for="hmuSchool">School</label>
+          <select id="hmuSchool"></select>
+        </div>
+
+        <form id="hmuForm" class="disabled">
+          <div class="hmu-top">
+            <label class="switch-row"><input type="checkbox" id="hmuEnabled"> <span>HMU booking on (students can book Hair &amp; Makeup)</span></label>
+            <span id="hmuMode"></span>
+          </div>
+
+          <div class="grid-4">
+            <div class="field"><label for="hmuOpen">Opens</label><select id="hmuOpen"></select></div>
+            <div class="field"><label for="hmuClose">Closes</label><select id="hmuClose"></select></div>
+            <div class="field"><label for="hmuLunchStart">Lunch start (optional)</label><select id="hmuLunchStart"></select></div>
+            <div class="field"><label for="hmuLunchEnd">Lunch end (optional)</label><select id="hmuLunchEnd"></select></div>
+          </div>
+
+          <div class="grid-3">
+            <div class="field">
+              <label for="hmuStaff">HMU staff (students per hour)</label>
+              <input type="number" id="hmuStaff" min="0" max="50" step="1" placeholder="e.g. 2">
+            </div>
+            <div class="field">
+              <label for="hmuMax">Max students per day (optional)</label>
+              <input type="number" id="hmuMax" min="1" step="1" placeholder="No limit">
+            </div>
+            <div class="field">
+              <label for="hmuCutoff">Cutoff hours (0 = none)</label>
+              <input type="number" id="hmuCutoff" min="0" max="168" step="1" value="0">
+            </div>
+          </div>
+          <div class="preview-box" id="hmuCapacity">—</div>
+
+          <div id="hmuDatesLinked" class="hmu-dates-note hidden"></div>
+          <div id="hmuDatesOpen" class="hidden">
+            <div class="grid-2">
+              <div class="field"><label for="hmuStart">Start date</label><input type="date" id="hmuStart"></div>
+              <div class="field"><label for="hmuEnd">End date</label><input type="date" id="hmuEnd"></div>
+            </div>
+            <div class="field">
+              <label>Days of the week</label>
+              <div class="dow-row" id="hmuDays">
+                <label><input type="checkbox" value="1"> Mon</label>
+                <label><input type="checkbox" value="2"> Tue</label>
+                <label><input type="checkbox" value="3"> Wed</label>
+                <label><input type="checkbox" value="4"> Thu</label>
+                <label><input type="checkbox" value="5"> Fri</label>
+                <label><input type="checkbox" value="6"> Sat</label>
+                <label><input type="checkbox" value="7"> Sun</label>
+              </div>
+            </div>
+            <div class="field">
+              <label for="hmuBlockFrom">Blocked dates (no HMU)</label>
+              <div class="block-add">
+                <input type="date" id="hmuBlockFrom" aria-label="Blocked from">
+                <span class="muted">to</span>
+                <input type="date" id="hmuBlockTo" aria-label="Blocked until (optional)">
+                <button type="button" class="btn btn-ghost btn-inline btn-sm" id="hmuBlockAddBtn">Add</button>
+              </div>
+              <div class="chip-list" id="hmuBlockList"></div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary btn-inline" id="hmuSaveBtn">Save settings</button>
+            <button type="button" class="btn btn-ghost btn-inline" id="hmuGenBtn">Generate / Rebuild HMU slots</button>
+          </div>
+          <p class="hint">Every HMU slot is 1 hour. After you change the hours or dates, press <strong>Generate / Rebuild HMU slots</strong> so the slots match. Rebuilding removes upcoming slots nobody has booked and makes them again; booked students are never removed.</p>
+        </form>
+      </div>
+
+      <h2 class="section-title">HMU list</h2>
+      <div class="filters">
+        <div class="field"><label for="hmuListSchool">School</label><select id="hmuListSchool"></select></div>
+        <div class="field"><label for="hmuListDate">Date</label><input type="date" id="hmuListDate"></div>
+        <button type="button" class="btn btn-ghost btn-inline" id="hmuListTodayBtn">Today</button>
+        <button type="button" class="btn btn-primary btn-inline" id="hmuListLoadBtn">Refresh</button>
+      </div>
+      <div id="hmuListAlert"></div>
+      <div id="hmuListSummary" class="summary"></div>
+      <div id="hmuList"></div>
     </section>
 
     <!-- ===== REQUESTS ===== -->

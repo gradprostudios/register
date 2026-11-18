@@ -21,15 +21,25 @@ const ERROR_TEXT = {
   booking_not_active: 'That booking is no longer active. The list has been refreshed.',
   capacity_below_booked: 'Capacity can’t be lower than the number of students already booked in that slot.',
   slot_not_found: 'That slot no longer exists.',
+  school_has_bookings: 'Students are still booked for this school (pictorial or Hair & Makeup). Move or cancel them first, then delete.',
+  slot_has_bookings:'Someone is booked in that slot. Move or cancel them first, then delete it.',
+  slot_has_history: 'That slot has past booking records, so it can’t be deleted. Close it instead.',
   invalid_status: 'Invalid booking status.',
   slot_full: 'The chosen slot is already full.',
   slot_unavailable: 'The chosen slot is closed or already in the past.',
   wrong_school: 'The chosen slot belongs to a different school.',
   same_slot: 'The student is already booked in that slot.',
   no_target_slot: 'Pick a slot to move the student to.',
+  hmu_settings_not_found: 'Save this school’s Hair & Makeup settings first.',
+  hmu_hours_not_set: 'Set the HMU opening and closing hours and save before generating HMU slots.',
+  hmu_dates_not_set: 'Set the HMU start and end dates and save before generating HMU slots.',
+  set_hours_and_staff_first: 'Set the HMU hours and staff count before setting a daily maximum.',
+  invalid_max: 'Max students per day must be 1 or more (leave it empty for no limit).',
+  invalid_count: 'HMU staff must be 0 or more.',
 };
 function errText(error, fallback){
   const m = (error && error.message) || '';
+  if (m.startsWith('max_exceeds_capacity:')) return `Max students per day can’t be more than ${m.split(':')[1]} (HMU staff × hourly slots per day).`;
   return ERROR_TEXT[m] || m || fallback || 'Something went wrong. Please try again.';
 }
 function showErr(alertId, error, fallback){
@@ -60,7 +70,7 @@ function fmtClock(t){
   return `${(h % 12) || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 const DOW = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const STATUS_LABEL = { booked: 'Booked', completed: 'Completed', no_show: 'No-show', cancelled: 'Cancelled', pending: 'Pending', approved: 'Approved', rejected: 'Rejected' };
+const STATUS_LABEL = { booked: 'Booked', completed: 'Completed', no_show: 'No-show', cancelled: 'Cancelled', pending: 'Pending', approved: 'Approved', rejected: 'Rejected', needs_rebook: 'Needs rebook' };
 function chip(status){ return `<span class="chip chip-${escapeHtml(status)}">${escapeHtml(STATUS_LABEL[status] || status)}</span>`; }
 
 function setBusy(btn, busy, text){
@@ -199,6 +209,7 @@ $('navToggle').addEventListener('click', () => {
 /* -------------------- schools (Details.Schools + any school with settings) -------------------- */
 let SCHOOLS = [];
 let settingsRows = [];
+let hmuRows = [];         // hmu_settings rows (Hair & Makeup page)
 
 async function loadSchools(){
   const [details, settings] = await Promise.all([
@@ -225,6 +236,8 @@ function fillSchoolSelects(){
   keep('bkSchool', '<option value="">All schools</option>' + opts(withSettings));
   keep('actSchool', '<option value="">All schools</option>' + opts(withSettings));
   keep('ubSchool', '<option value="">Select a school…</option>' + opts(SCHOOLS));
+  keep('hmuSchool', '<option value="">Select a school…</option>' + opts(SCHOOLS));
+  keep('hmuListSchool', '<option value="">All schools</option>' + opts(hmuRows.map(r => r.school)));
   keep('annSchool', '<option value="">All schools</option>' + opts(SCHOOLS));
   keep('annFilter', '<option value="*">All announcements</option><option value="">General (all schools) only</option>' + opts(SCHOOLS));
 }
@@ -522,11 +535,50 @@ async function renderSettingsTable(){
         <td data-label="Students">${r.total_students ? `<strong>${r.total_students.toLocaleString()}</strong><div class="muted">${r.per_slot_capacity} per hour</div>` : `<span class="muted">${r.per_slot_capacity} per ${r.slot_minutes === 60 ? 'hour' : r.slot_minutes + ' min'}</span>`}</td>
         <td data-label="Blocked">${(r.blocked_dates || []).length ? dayRanges([...r.blocked_dates].sort()).map(rg => escapeHtml(rangeLabel(rg))).join('<br>') : '<span class="muted">None</span>'}</td>
         <td data-label="Upcoming slots">${counts[i].count ?? '—'}</td>
-        <td><button type="button" class="btn-link" data-edit-school="${escapeHtml(r.school)}">Edit</button></td>
+        <td><div class="row-actions">
+          <button type="button" class="btn-link" data-edit-school="${escapeHtml(r.school)}">Edit</button>
+          <button type="button" class="btn-link danger" data-del-school="${escapeHtml(r.school)}">Delete</button>
+        </div></td>
       </tr>`).join('')}
     </tbody>`;
 }
 $('settingsTable').addEventListener('click', (e) => {
+  const delBtn = e.target.closest('[data-del-school]');
+  if (delBtn) {
+    const school = delBtn.dataset.delSchool;
+    clearAlert('settingsAlert');
+    openDialog({
+      title: 'Delete this school setup?',
+      body: `<p>This deletes the booking setup of <strong>${escapeHtml(school)}</strong>, including Hair &amp; Makeup:</p>
+        <ul class="dialog-list">
+          <li>its pictorial settings and HMU settings</li>
+          <li>every pictorial slot and HMU slot nobody has booked</li>
+        </ul>
+        <p class="muted">If students are still booked, nothing is deleted. Move or cancel them first. If some slots have past records (cancelled, completed, no-show), those slots and the settings are kept and booking is turned OFF instead. Student accounts are not touched. This can’t be undone.</p>`,
+      okText: 'Delete school setup', danger: true,
+      onOk: async () => {
+        const { data, error } = await sb.rpc('staff_delete_school_setup', { p_school: school });
+        if (error) { showErr('dialogAlert', error); return false; }
+        const r = data || {};
+        const n = (x) => (x || 0).toLocaleString();
+        if (r.removed) {
+          alertBox('settingsAlert', `Deleted the setup of <strong>${escapeHtml(school)}</strong> (${n(r.slots_deleted)} pictorial slot${r.slots_deleted === 1 ? '' : 's'}, ${n(r.hmu_slots_deleted)} HMU slot${r.hmu_slots_deleted === 1 ? '' : 's'}).`, 'success');
+        } else {
+          alertBox('settingsAlert', `Deleted ${n(r.slots_deleted)} pictorial and ${n(r.hmu_slots_deleted)} HMU slots of <strong>${escapeHtml(school)}</strong>. `
+            + `${n((r.slots_kept || 0) + (r.hmu_slots_kept || 0))} slot${(r.slots_kept || 0) + (r.hmu_slots_kept || 0) === 1 ? ' has' : 's have'} past booking records, so the settings were kept and booking + HMU are now <strong>OFF</strong> for this school.`, 'warn');
+        }
+        if ($('setSchool').value === school) $('setSchool').value = '';
+        slotRows = []; slotDay = null;
+        await loadSchools();
+        await loadHmuSettings();
+        fillSchoolSelects();
+        fillSettingsForm();
+        renderSettingsTable();
+        return true;
+      },
+    });
+    return;
+  }
   const btn = e.target.closest('[data-edit-school]');
   if (!btn) return;
   $('setSchool').value = btn.dataset.editSchool;
@@ -651,7 +703,10 @@ function renderSlotDay(){
             <td data-label="Capacity"><span class="cap-edit"><input type="number" min="${s.booked_count}" max="500" value="${s.capacity}" data-cap-input="${s.id}" aria-label="Capacity"><button type="button" class="btn-link" data-cap-save="${s.id}">Save</button></span></td>
             <td data-label="Left">${Math.max(s.capacity - s.booked_count, 0)}</td>
             <td data-label="Status">${past ? '<span class="chip chip-cancelled">Past</span>' : s.is_closed ? '<span class="chip chip-rejected">Closed</span>' : s.booked_count >= s.capacity ? '<span class="chip chip-pending">Full</span>' : '<span class="chip chip-approved">Open</span>'}</td>
-            <td><button type="button" class="btn-link" data-slot-toggle="${s.id}" data-closed="${s.is_closed}">${s.is_closed ? 'Reopen' : 'Close'}</button></td>
+            <td><div class="row-actions">
+              <button type="button" class="btn-link" data-slot-toggle="${s.id}" data-closed="${s.is_closed}">${s.is_closed ? 'Reopen' : 'Close'}</button>
+              ${s.booked_count ? '' : `<button type="button" class="btn-link danger" data-slot-del="${s.id}">Delete</button>`}
+            </div></td>
           </tr>`; }).join('')}
         </tbody>
       </table>
@@ -675,7 +730,25 @@ $('slotsList').addEventListener('click', async (e) => {
   const slotBtn = e.target.closest('[data-slot-toggle]');
   const dayBtn = e.target.closest('[data-day-toggle]');
   const dayBookingsBtn = e.target.closest('[data-day-bookings]');
+  const delBtn = e.target.closest('[data-slot-del]');
   clearAlert('slotsAlert');
+
+  if (delBtn) {
+    const slot = slotRows.find(s => s.id === delBtn.dataset.slotDel);
+    openDialog({
+      title: 'Delete this slot?',
+      body: `<p><strong>${escapeHtml(fmtWhen(slot.slot_start))}</strong> will be removed. Students will no longer see it.</p><p class="muted">This can’t be undone. “Generate slots” or “Rebuild slots” in Slot Settings will create it again if the date is still in range.</p>`,
+      okText: 'Delete slot', danger: true,
+      onOk: async () => {
+        const { error } = await sb.rpc('staff_delete_slot', { p_slot_id: slot.id });
+        if (error) { showErr('dialogAlert', error); if (error.message === 'slot_not_found' || error.message === 'slot_has_bookings') loadSlots(); return false; }
+        alertBox('slotsAlert', `Deleted the ${escapeHtml(fmtRange(slot.slot_start, slot.slot_end))} slot.`, 'success');
+        loadSlots();
+        return true;
+      },
+    });
+    return;
+  }
 
   if (dayBookingsBtn) {
     $('bkSchool').value = $('slotSchool').value;
@@ -877,6 +950,426 @@ $('bookingsCsvBtn').addEventListener('click', () => {
 });
 
 PAGE_LOADERS.bookings = () => { clearAlert('bookingsAlert'); loadBookings(); };
+
+/* ================================================================
+   HAIR & MAKEUP (HMU)
+   Settings live in hmu_settings (staff edit it directly), except staff count and the daily
+   maximum, which go through their RPCs. Linked mode = the school has pictorial booking on.
+   ================================================================ */
+const HMU_HOURS = [];
+for (let h = 5; h <= 21; h++) HMU_HOURS.push(String(h).padStart(2, '0') + ':00');
+let hmuBlocked = [];      // open-mode blocked dates in the form, sorted 'YYYY-MM-DD'
+
+async function loadHmuSettings(){
+  const { data, error } = await sb.from('hmu_settings').select('*').order('school');
+  if (error) { showErr('hmuAlert', error, 'Could not load Hair & Makeup settings.'); return false; }
+  hmuRows = data || [];
+  return true;
+}
+function hmuFor(school){
+  const k = (school || '').trim().toLowerCase();
+  return hmuRows.find(r => r.school.trim().toLowerCase() === k);
+}
+function hmuLinked(school){
+  const k = (school || '').trim().toLowerCase();
+  return settingsRows.some(r => r.school.trim().toLowerCase() === k && r.is_enabled);
+}
+// The DB functions match the school name exactly, so keep the spelling already stored:
+// the HMU row's, else the pictorial settings' (linked mode reads its dates from there).
+function hmuSchoolName(school){
+  const k = (school || '').trim().toLowerCase();
+  const h = hmuFor(school);
+  const p = settingsRows.find(r => r.school.trim().toLowerCase() === k);
+  return h ? h.school : p ? p.school : school;
+}
+
+// 'Mon–Sat' for a run of days, otherwise 'Mon, Wed, Fri'.
+function daysLabel(days){
+  const d = [...(days || [])].map(Number).sort((a, b) => a - b);
+  if (!d.length) return 'no days';
+  const run = d.every((v, i) => i === 0 || v === d[i - 1] + 1);
+  return run && d.length > 2 ? `${DOW[d[0]]}–${DOW[d[d.length - 1]]}` : d.map(x => DOW[x]).join(', ');
+}
+
+const toMinutes = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+// Mirrors _hmu_slots_per_day: 1-hour slots between open and close, skipping any that touch lunch.
+function hmuSlotsPerDay(open, close, ls, le){
+  if (!open || !close) return 0;
+  let n = 0;
+  for (let t = toMinutes(open); t + 60 <= toMinutes(close); t += 60) {
+    const end = t + 60;
+    if (!ls || !le || !(t < toMinutes(le) && end > toMinutes(ls))) n++;
+  }
+  return n;
+}
+
+function hourOptions(sel, value, emptyText){
+  const list = HMU_HOURS.slice();
+  if (value && !list.includes(value)) { list.push(value); list.sort(); } // keep a stored half-hour
+  sel.innerHTML = `<option value="">${escapeHtml(emptyText)}</option>` + list.map(t => `<option value="${t}">${escapeHtml(fmtClock(t))}</option>`).join('');
+  sel.value = value || '';
+}
+
+function renderHmuBlocked(){
+  $('hmuBlockList').innerHTML = hmuBlocked.length
+    ? dayRanges(hmuBlocked).map(r => `<span class="date-chip">${escapeHtml(rangeLabel(r))}<button type="button" data-hmu-unblock="${r[0]}|${r[1]}" aria-label="Unblock ${escapeHtml(rangeLabel(r))}">×</button></span>`).join('')
+    : '<span class="muted">No blocked dates.</span>';
+}
+$('hmuBlockAddBtn').addEventListener('click', () => {
+  clearAlert('hmuAlert');
+  const from = $('hmuBlockFrom').value;
+  const to = $('hmuBlockTo').value || from;
+  if (!from) { alertBox('hmuAlert', 'Pick the first blocked date.', 'error'); return; }
+  if (to < from) { alertBox('hmuAlert', 'The "to" date must be on or after the first date.', 'error'); return; }
+  const add = [];
+  for (let d = from; d <= to && add.length <= 366; d = nextDay(d)) add.push(d);
+  if (add.length > 366) { alertBox('hmuAlert', 'Block at most one year at a time.', 'error'); return; }
+  hmuBlocked = [...new Set([...hmuBlocked, ...add])].sort();
+  $('hmuBlockFrom').value = ''; $('hmuBlockTo').value = '';
+  renderHmuBlocked();
+});
+$('hmuBlockList').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-hmu-unblock]');
+  if (!btn) return;
+  const [from, to] = btn.dataset.hmuUnblock.split('|');
+  hmuBlocked = hmuBlocked.filter(d => d < from || d > to);
+  renderHmuBlocked();
+});
+
+function fillHmuForm(){
+  const school = $('hmuSchool').value;
+  $('hmuForm').classList.toggle('disabled', !school);
+  const row = hmuFor(school) || {};
+  const linked = !!school && hmuLinked(school);
+  $('hmuEnabled').checked = !!row.is_enabled;
+  $('hmuMode').innerHTML = !school ? ''
+    : linked ? '<span class="chip chip-approved">Linked to pictorial schedule</span>'
+    : '<span class="chip chip-pending">Open schedule</span>';
+  hourOptions($('hmuOpen'), hhmm(row.open_time), 'Select…');
+  hourOptions($('hmuClose'), hhmm(row.close_time), 'Select…');
+  hourOptions($('hmuLunchStart'), hhmm(row.lunch_start), 'No lunch');
+  hourOptions($('hmuLunchEnd'), hhmm(row.lunch_end), 'No lunch');
+  $('hmuStaff').value = row.school ? row.staff_count : 2; // the table's default
+  $('hmuMax').value = row.max_per_day ?? '';
+  $('hmuCutoff').value = row.cutoff_hours ?? 0;
+  $('hmuStart').value = row.start_date || '';
+  $('hmuEnd').value = row.end_date || '';
+  const days = (row.days_of_week || [1, 2, 3, 4, 5, 6]).map(Number);
+  document.querySelectorAll('#hmuDays input').forEach(cb => { cb.checked = days.includes(Number(cb.value)); });
+  hmuBlocked = [...(row.blocked_dates || [])].sort();
+  renderHmuBlocked();
+  $('hmuDatesOpen').classList.toggle('hidden', !school || linked);
+  $('hmuDatesLinked').classList.toggle('hidden', !linked);
+  if (linked) {
+    const p = settingsRows.find(r => r.school.trim().toLowerCase() === school.trim().toLowerCase());
+    const nBlocked = (p.blocked_dates || []).length;
+    $('hmuDatesLinked').innerHTML = `Dates follow the pictorial schedule (<strong>${escapeHtml(fmtDay(p.start_date, { weekday: undefined }))} – ${escapeHtml(fmtDay(p.end_date, { weekday: undefined }))}, ${escapeHtml(daysLabel(p.days_of_week))}</strong>)`
+      + (nBlocked ? `, skipping its ${nBlocked} blocked date${nBlocked === 1 ? '' : 's'}` : '') + '. Change them in Slot Settings.';
+  }
+  $('hmuSaveBtn').disabled = !school;
+  $('hmuGenBtn').disabled = !row.school;
+  updateHmuCapacity();
+}
+
+function updateHmuCapacity(){
+  const school = $('hmuSchool').value;
+  const per = hmuSlotsPerDay($('hmuOpen').value, $('hmuClose').value, $('hmuLunchStart').value, $('hmuLunchEnd').value);
+  const staffRaw = $('hmuStaff').value.trim();
+  const staff = staffRaw === '' ? 0 : Number(staffRaw);
+  const cap = Number.isInteger(staff) && staff > 0 ? staff * per : 0;
+  $('hmuMax').disabled = !(per > 0 && cap > 0);
+  if (!school) { $('hmuCapacity').textContent = '—'; return; }
+  if (!per) { $('hmuCapacity').textContent = 'Set the opening and closing hours to see how many students fit per day.'; return; }
+  $('hmuCapacity').innerHTML = `${per} one-hour slot${per === 1 ? '' : 's'} a day × ${Number.isInteger(staff) ? staff : 0} staff = <strong>${cap} students per day</strong>`
+    + `<br><span class="preview-sub">Max possible: ${cap}${$('hmuMax').value ? ` · daily limit set to ${escapeHtml($('hmuMax').value)}` : ' · no daily limit'}</span>`;
+}
+$('hmuForm').addEventListener('input', updateHmuCapacity);
+$('hmuForm').addEventListener('change', updateHmuCapacity);
+
+function readHmuForm(){
+  const school = $('hmuSchool').value;
+  const linked = hmuLinked(school);
+  const num = (id) => { const v = $(id).value.trim(); return v === '' ? null : Number(v); };
+  const s = {
+    school,
+    is_enabled: $('hmuEnabled').checked,
+    open_time: $('hmuOpen').value || null,
+    close_time: $('hmuClose').value || null,
+    lunch_start: $('hmuLunchStart').value || null,
+    lunch_end: $('hmuLunchEnd').value || null,
+    cutoff_hours: num('hmuCutoff') ?? 0,
+    staff: num('hmuStaff'),
+    max: num('hmuMax'),
+    start_date: $('hmuStart').value || null,
+    end_date: $('hmuEnd').value || null,
+    days_of_week: [...document.querySelectorAll('#hmuDays input:checked')].map(cb => Number(cb.value)),
+    blocked_dates: hmuBlocked.slice(),
+  };
+  let error = null;
+  if (!school) error = 'Pick a school first.';
+  else if (!!s.open_time !== !!s.close_time) error = 'Set both the opening and closing hours.';
+  else if (s.open_time && toMinutes(s.close_time) <= toMinutes(s.open_time)) error = 'Closing time must be after opening time.';
+  else if (s.is_enabled && !s.open_time) error = 'Set the HMU hours before turning HMU booking on.';
+  else if (!!s.lunch_start !== !!s.lunch_end) error = 'Set both lunch start and lunch end, or leave both as “No lunch”.';
+  else if (s.lunch_start && toMinutes(s.lunch_end) <= toMinutes(s.lunch_start)) error = 'Lunch end must be after lunch start.';
+  else if (s.open_time && !hmuSlotsPerDay(s.open_time, s.close_time, s.lunch_start, s.lunch_end)) error = 'These hours give no 1-hour slots. Check the hours and lunch break.';
+  else if (!(Number.isInteger(s.staff) && s.staff >= 0 && s.staff <= 50)) error = 'Enter the number of HMU staff (0 or more).';
+  else if (s.max !== null && !(Number.isInteger(s.max) && s.max >= 1)) error = 'Max students per day must be a whole number of 1 or more, or empty for no limit.';
+  else if (!(Number.isInteger(s.cutoff_hours) && s.cutoff_hours >= 0 && s.cutoff_hours <= 168)) error = 'Cutoff hours must be from 0 to 168.';
+  else if (!linked && !!s.start_date !== !!s.end_date) error = 'Set both the start and end dates, or leave both empty.';
+  else if (!linked && s.start_date && s.end_date < s.start_date) error = 'End date must be on or after the start date.';
+  else if (!linked && s.start_date && !s.days_of_week.length) error = 'Pick at least one day of the week.';
+  return { s, error, linked };
+}
+
+// Saves the form. Returns { name, notes[], warn } or null when something failed (message shown).
+async function saveHmu(alertId){
+  const { s, error, linked } = readHmuForm();
+  if (error) { alertBox(alertId, escapeHtml(error), 'error'); return null; }
+  const existing = hmuFor(s.school);
+  const name = hmuSchoolName(s.school);
+  const row = {
+    school: name, is_enabled: s.is_enabled,
+    open_time: s.open_time, close_time: s.close_time, lunch_start: s.lunch_start, lunch_end: s.lunch_end,
+    cutoff_hours: s.cutoff_hours, updated_at: new Date().toISOString(),
+  };
+  // Dates are only used in open mode; a linked school keeps whatever was stored.
+  if (!linked) Object.assign(row, { start_date: s.start_date, end_date: s.end_date, days_of_week: s.days_of_week, blocked_dates: s.blocked_dates });
+  const { error: dbError } = await sb.from('hmu_settings').upsert(row, { onConflict: 'school' });
+  if (dbError) { showErr(alertId, dbError, 'Could not save Hair & Makeup settings.'); return null; }
+
+  const notes = [];
+  let warn = false;
+  if (!existing || Number(existing.staff_count) !== s.staff) {
+    const { data, error: e1 } = await sb.rpc('staff_set_hmu_staff_count', { p_school: name, p_count: s.staff });
+    if (e1) { showErr(alertId, e1, 'Settings saved, but the staff count could not be updated.'); await loadHmuSettings(); return null; }
+    const r = data || {};
+    notes.push(`Staff count set to ${s.staff}: ${r.daily_capacity ?? 0} students per day${r.updated_slots ? `, ${r.updated_slots} upcoming slot${r.updated_slots === 1 ? '' : 's'} updated` : ''}.`);
+    if (existing && existing.max_per_day !== null && r.max_per_day !== null && r.max_per_day < existing.max_per_day) {
+      notes.push(`The daily maximum was lowered to ${r.max_per_day} to fit.`);
+    }
+  }
+  // Re-check the daily maximum after any hours or staff change, so a limit that no longer fits shows up.
+  if (s.max !== null || (existing && existing.max_per_day !== null)) {
+    const { data, error: e2 } = await sb.rpc('staff_set_hmu_max_per_day', { p_school: name, p_max: s.max });
+    if (e2) { notes.push(escapeHtml(errText(e2))); warn = true; }
+    else notes.push(s.max === null ? 'No daily limit.' : `Daily limit: ${data.max_per_day} of ${data.daily_capacity} possible.`);
+  }
+  await loadHmuSettings();
+  fillSchoolSelects();
+  $('hmuSchool').value = s.school;
+  fillHmuForm();
+  if (warn) { $('hmuMax').value = s.max ?? ''; updateHmuCapacity(); } // keep what the admin typed so they can fix it
+  return { name, notes, warn };
+}
+
+$('hmuSchool').addEventListener('change', () => {
+  clearAlert('hmuAlert');
+  fillHmuForm();
+  const name = hmuFor($('hmuSchool').value) && hmuFor($('hmuSchool').value).school;
+  if (name && $('hmuListSchool').value !== name) { $('hmuListSchool').value = name; $('hmuListDate').value = ''; loadHmuList(); }
+});
+
+$('hmuForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearAlert('hmuAlert');
+  const btn = $('hmuSaveBtn');
+  setBusy(btn, true, 'Saving…');
+  const res = await saveHmu('hmuAlert');
+  setBusy(btn, false);
+  if (!res) return;
+  alertBox('hmuAlert', `Hair &amp; Makeup settings saved for <strong>${escapeHtml(res.name)}</strong>.`
+    + (res.notes.length ? ' ' + res.notes.join(' ') : '')
+    + ($('hmuEnabled').checked ? '' : ' HMU booking is <strong>off</strong>, so students don’t see it.')
+    + ' If you changed the hours or dates, press <strong>Generate / Rebuild HMU slots</strong>.', res.warn ? 'warn' : 'success');
+});
+
+$('hmuGenBtn').addEventListener('click', () => {
+  clearAlert('hmuAlert');
+  const { s, error, linked } = readHmuForm();
+  if (error) { alertBox('hmuAlert', escapeHtml(error), 'error'); return; }
+  openDialog({
+    title: 'Generate HMU slots?',
+    body: `<p>This saves the Hair &amp; Makeup settings for <strong>${escapeHtml(s.school)}</strong>, then:</p>
+      <ul class="dialog-list">
+        <li>removes upcoming HMU slots nobody has booked,</li>
+        <li>makes 1-hour HMU slots from ${linked ? 'the <strong>pictorial schedule’s dates</strong>' : 'the HMU dates'} and these hours,</li>
+        <li>keeps every student who already booked HMU.</li>
+      </ul>
+      <div class="preview-box">${$('hmuCapacity').innerHTML}</div>`,
+    okText: 'Save & generate',
+    onOk: async () => {
+      const saved = await saveHmu('dialogAlert');
+      if (!saved) return false;
+      const { data, error: rpcError } = await sb.rpc('staff_generate_hmu_slots', { p_school: saved.name });
+      if (rpcError) { showErr('dialogAlert', rpcError); return false; }
+      const r = data || {};
+      let html = `HMU slots ready for <strong>${escapeHtml(saved.name)}</strong> (${r.mode === 'linked' ? 'linked to pictorial' : 'open schedule'}): `
+        + `<strong>${(r.slots || 0).toLocaleString()}</strong> upcoming slot${r.slots === 1 ? '' : 's'} made or updated, ${(r.removed || 0).toLocaleString()} unbooked old slot${r.removed === 1 ? '' : 's'} removed.`;
+      if (r.closed_leftovers) html += ` Closed ${r.closed_leftovers} booked slot${r.closed_leftovers === 1 ? '' : 's'} outside the new schedule (the students stay booked; check the HMU list).`;
+      if (saved.notes.length) html += '<br>' + saved.notes.join(' ');
+      if (!r.slots) html += '<br>No slots were made. Check that the dates are in the future and the days of the week are right.';
+      alertBox('hmuAlert', html, saved.warn || r.closed_leftovers || !r.slots ? 'warn' : 'success');
+      $('hmuListSchool').value = saved.name;
+      $('hmuListDate').value = '';
+      loadHmuList();
+      return true;
+    },
+  });
+});
+
+/* ---- HMU list ---- */
+let hmuListRows = [];
+let hmuListSlots = [];
+
+// Today if it has HMU slots, else the next day that does (falls back to today).
+async function firstHmuDay(school){
+  let q = sb.from('hmu_slots').select('slot_start').gte('slot_start', dayStartIso(todayManila())).order('slot_start').limit(1);
+  if (school) q = q.eq('school', school);
+  const { data } = await q;
+  return data && data.length ? manilaDay(data[0].slot_start) : todayManila();
+}
+
+async function loadHmuList(){
+  const seq = nextSeq('hmuList');
+  const school = $('hmuListSchool').value || null;
+  if (!$('hmuListDate').value) $('hmuListDate').value = await firstHmuDay(school);
+  if (seq !== loadSeq.hmuList) return;
+  const day = $('hmuListDate').value;
+  $('hmuList').innerHTML = '<div class="empty">Loading…</div>';
+  const [bk, sl] = await Promise.all([
+    fetchAll(() => sb.rpc('staff_list_hmu_bookings', { p_school: school, p_day: day })),
+    fetchAll(() => {
+      let q = sb.from('hmu_slots').select('id, school, slot_start, slot_end, capacity, booked_count, is_closed')
+        .gte('slot_start', dayStartIso(day)).lt('slot_start', dayStartIso(nextDay(day))).order('slot_start');
+      return school ? q.eq('school', school) : q;
+    }),
+  ]);
+  if (seq !== loadSeq.hmuList) return;
+  if (bk.error || sl.error) { showErr('hmuListAlert', bk.error || sl.error, 'Could not load the HMU list.'); $('hmuList').innerHTML = ''; return; }
+  hmuListRows = bk.data || [];
+  hmuListSlots = sl.data || [];
+  renderHmuList();
+}
+
+function renderHmuList(){
+  const day = $('hmuListDate').value;
+  const title = escapeHtml(fmtDay(day, { weekday: 'long', month: 'long', year: 'numeric' }));
+  const schools = [...new Set([...hmuListSlots.map(s => s.school), ...hmuListRows.map(b => b.school)])].sort((a, b) => a.localeCompare(b));
+  const active = hmuListRows.filter(b => b.status === 'booked' || b.status === 'completed').length;
+  const rebook = hmuListRows.filter(b => b.status === 'needs_rebook').length;
+  $('hmuListSummary').innerHTML = (hmuListSlots.length || hmuListRows.length)
+    ? `<span><strong>${title}</strong></span><span><strong>${active}</strong> booked</span>`
+      + (rebook ? `<span>${chip('needs_rebook')} ${rebook}</span>` : '')
+    : '';
+  if (!schools.length) {
+    $('hmuList').innerHTML = `<div class="empty">No HMU slots or bookings on ${title}.</div>`;
+    return;
+  }
+  $('hmuList').innerHTML = schools.map(school => {
+    const slots = hmuListSlots.filter(s => s.school === school);
+    const rows = hmuListRows.filter(b => b.school === school);
+    const h = hmuFor(school) || {};
+    const dayActive = rows.filter(b => b.status === 'booked' || b.status === 'completed').length;
+    const cap = slots.reduce((a, s) => a + (s.is_closed ? 0 : s.capacity), 0);
+    const limit = h.max_per_day ? `${h.max_per_day} max per day` : `${cap} daily capacity`;
+    const linked = hmuLinked(school);
+    // Every slot of the day, plus any booking whose slot is not in the list (e.g. a closed leftover).
+    const groups = slots.map(s => ({ s, rows: rows.filter(b => new Date(b.hmu_start).getTime() === new Date(s.slot_start).getTime()) }));
+    const shown = new Set(groups.flatMap(g => g.rows));
+    const other = rows.filter(b => !shown.has(b));
+    if (other.length) groups.push({ s: null, rows: other });
+    return `
+      <div class="day-card">
+        <div class="day-head">
+          <div><strong>${escapeHtml(school)}</strong> <span class="muted">${linked ? 'Linked to pictorial' : 'Open schedule'}</span></div>
+          <div><strong>${dayActive}</strong> booked / ${escapeHtml(limit)}</div>
+        </div>
+        ${groups.map(g => `
+          <div class="hmu-slot-head">
+            <strong>${g.s ? escapeHtml(fmtRange(g.s.slot_start, g.s.slot_end)) : 'Other'}</strong>
+            ${g.s ? `<span class="row-actions"><span class="muted">${g.s.booked_count}/${g.s.capacity} booked${g.s.is_closed ? ' · <span class="chip chip-rejected">Closed</span>' : ''}</span>
+              ${!g.s.booked_count && !g.rows.length ? `<button type="button" class="btn-link danger" data-hmu-slot-del="${g.s.id}">Delete slot</button>` : ''}</span>` : ''}
+          </div>
+          ${g.rows.length ? `
+          <table class="table slot-table">
+            <thead><tr><th>Name</th><th>Username</th><th>HMU time</th><th>Pictorial</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>${g.rows.map(b => `
+              <tr class="${b.status === 'cancelled' || b.status === 'no_show' ? 'row-closed' : ''}">
+                <td data-label="Name"><strong>${escapeHtml(b.full_name || '—')}</strong></td>
+                <td data-label="Username">${escapeHtml(b.username)}</td>
+                <td data-label="HMU time">${escapeHtml(fmtRange(b.hmu_start, b.hmu_end))}</td>
+                <td data-label="Pictorial">${b.pictorial_start ? escapeHtml(fmtTime(b.pictorial_start)) : ''}</td>
+                <td data-label="Status">${chip(b.status)}${b.status === 'needs_rebook' ? '<div class="muted">Pictorial changed. Ask the student to pick a new HMU time.</div>' : ''}</td>
+                <td data-label="Actions">${b.status === 'booked' ? `
+                  <div class="row-actions">
+                    <button type="button" class="btn-link" data-hmu-status="completed" data-id="${b.id}">Completed</button>
+                    <button type="button" class="btn-link" data-hmu-status="no_show" data-id="${b.id}">No-show</button>
+                    <button type="button" class="btn-link danger" data-hmu-status="cancelled" data-id="${b.id}">Cancel</button>
+                  </div>` : ''}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : '<div class="hmu-slot-empty">No students yet.</div>'}`).join('')}
+      </div>`;
+  }).join('');
+}
+
+const HMU_STATUS_CONFIRM = {
+  completed: { title: 'Mark HMU as completed?', text: 'Use this after the student’s hair and makeup is done.', ok: 'Mark completed' },
+  no_show: { title: 'Mark HMU as no-show?', text: 'The seat is released back to the HMU slot.', ok: 'Mark no-show', danger: true },
+  cancelled: { title: 'Cancel this HMU booking?', text: 'The seat is released back to the HMU slot. The student can book HMU again.', ok: 'Cancel HMU', danger: true },
+};
+$('hmuList').addEventListener('click', (e) => {
+  const delBtn = e.target.closest('[data-hmu-slot-del]');
+  if (delBtn) {
+    clearAlert('hmuListAlert');
+    const slot = hmuListSlots.find(s => s.id === delBtn.dataset.hmuSlotDel);
+    openDialog({
+      title: 'Delete this HMU slot?',
+      body: `<p><strong>${escapeHtml(slot.school)}</strong> · HMU ${escapeHtml(fmtWhen(slot.slot_start))} will be removed. Students will no longer see it.</p><p class="muted">This can’t be undone. “Generate / Rebuild HMU slots” will create it again if the date is still in range.</p>`,
+      okText: 'Delete slot', danger: true,
+      onOk: async () => {
+        const { error } = await sb.rpc('staff_delete_hmu_slot', { p_slot_id: slot.id });
+        if (error) { showErr('dialogAlert', error); if (error.message === 'slot_not_found' || error.message === 'slot_has_bookings') loadHmuList(); return false; }
+        alertBox('hmuListAlert', `Deleted the ${escapeHtml(fmtRange(slot.slot_start, slot.slot_end))} HMU slot.`, 'success');
+        loadHmuList();
+        return true;
+      },
+    });
+    return;
+  }
+  const btn = e.target.closest('[data-hmu-status]');
+  if (!btn) return;
+  clearAlert('hmuListAlert');
+  const b = hmuListRows.find(r => r.id === btn.dataset.id);
+  const status = btn.dataset.hmuStatus;
+  const cfg = HMU_STATUS_CONFIRM[status];
+  openDialog({
+    title: cfg.title,
+    body: `<p><strong>${escapeHtml(b.full_name || b.username)}</strong> · HMU ${escapeHtml(fmtWhen(b.hmu_start))}</p><p class="muted">${cfg.text}</p>`,
+    okText: cfg.ok, danger: cfg.danger,
+    onOk: async () => {
+      const { error } = await sb.rpc('staff_set_hmu_booking_status', { p_id: b.id, p_status: status });
+      if (error) { showErr('dialogAlert', error); if (error.message === 'booking_not_active') loadHmuList(); return false; }
+      alertBox('hmuListAlert', `${escapeHtml(b.full_name || b.username)}’s HMU marked as <strong>${escapeHtml(STATUS_LABEL[status])}</strong>.`, 'success');
+      loadHmuList();
+      return true;
+    },
+  });
+});
+
+$('hmuListLoadBtn').addEventListener('click', () => { clearAlert('hmuListAlert'); loadHmuList(); });
+$('hmuListSchool').addEventListener('change', () => { clearAlert('hmuListAlert'); $('hmuListDate').value = ''; loadHmuList(); });
+$('hmuListDate').addEventListener('change', () => { clearAlert('hmuListAlert'); if ($('hmuListDate').value) loadHmuList(); });
+$('hmuListTodayBtn').addEventListener('click', () => { clearAlert('hmuListAlert'); $('hmuListDate').value = todayManila(); loadHmuList(); });
+
+PAGE_LOADERS.hmu = async () => {
+  clearAlert('hmuListAlert');
+  if (!(await loadHmuSettings())) return;
+  fillSchoolSelects();
+  fillHmuForm();
+  loadHmuList();
+};
 
 /* ================================================================
    STUDENT ACTIVITY (self-service book / reschedule / cancel log)
