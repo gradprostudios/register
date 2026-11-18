@@ -1363,6 +1363,27 @@ $('hmuListSchool').addEventListener('change', () => { clearAlert('hmuListAlert')
 $('hmuListDate').addEventListener('change', () => { clearAlert('hmuListAlert'); if ($('hmuListDate').value) loadHmuList(); });
 $('hmuListTodayBtn').addEventListener('click', () => { clearAlert('hmuListAlert'); $('hmuListDate').value = todayManila(); loadHmuList(); });
 
+// CSV of HMU bookings for the chosen school (or all schools): one day, or every date.
+async function downloadHmuCsv(btn, allDates){
+  clearAlert('hmuListAlert');
+  const school = $('hmuListSchool').value || null;
+  const day = allDates ? null : $('hmuListDate').value;
+  if (!allDates && !day) { alertBox('hmuListAlert', 'Pick a date first.', 'error'); return; }
+  setBusy(btn, true, 'Preparing…');
+  const { data, error } = await fetchAll(() => sb.rpc('staff_list_hmu_bookings', { p_school: school, p_day: day }));
+  setBusy(btn, false);
+  if (error) { showErr('hmuListAlert', error, 'Could not load HMU bookings.'); return; }
+  const rows = data || [];
+  if (!rows.length) { alertBox('hmuListAlert', allDates ? 'No HMU bookings to download.' : 'No HMU bookings on this day.', 'error'); return; }
+  const name = (school || 'all-schools').replace(/[^\w.-]+/g, '_');
+  downloadCsv(`hmu-${name}-${allDates ? 'all-dates' : day}.csv`,
+    ['Date', 'HMU Time', 'Full Name', 'Username', 'School', 'Pictorial', 'Status'],
+    rows.map(b => [manilaDay(b.hmu_start), fmtRange(b.hmu_start, b.hmu_end), b.full_name, b.username, b.school,
+      b.pictorial_start ? fmtWhen(b.pictorial_start) : '', STATUS_LABEL[b.status] || b.status]));
+}
+$('hmuCsvDayBtn').addEventListener('click', (e) => downloadHmuCsv(e.currentTarget, false));
+$('hmuCsvAllBtn').addEventListener('click', (e) => downloadHmuCsv(e.currentTarget, true));
+
 PAGE_LOADERS.hmu = async () => {
   clearAlert('hmuListAlert');
   if (!(await loadHmuSettings())) return;
