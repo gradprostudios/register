@@ -290,13 +290,18 @@
       <h2 class="section-title">HMU list</h2>
       <div class="filters">
         <div class="field"><label for="hmuListSchool">School</label><select id="hmuListSchool"></select></div>
-        <div class="field"><label for="hmuListDate">Date</label><input type="date" id="hmuListDate"></div>
+        <div class="field"><label for="hmuListDate">Jump to date</label><input type="date" id="hmuListDate"></div>
         <button type="button" class="btn btn-ghost btn-inline" id="hmuListTodayBtn">Today</button>
         <button type="button" class="btn btn-primary btn-inline" id="hmuListLoadBtn">Refresh</button>
         <button type="button" class="btn btn-ghost btn-inline" id="hmuCsvDayBtn">Download CSV (this day)</button>
         <button type="button" class="btn btn-ghost btn-inline" id="hmuCsvAllBtn">Download CSV (all dates)</button>
       </div>
       <div id="hmuListAlert"></div>
+      <div class="day-strip-wrap">
+        <button type="button" class="strip-nav" id="hmuPrevDay" aria-label="Previous day">&#8249;</button>
+        <div class="day-strip" id="hmuDayStrip" role="listbox" aria-label="Days with HMU slots"></div>
+        <button type="button" class="strip-nav" id="hmuNextDay" aria-label="Next day">&#8250;</button>
+      </div>
       <div id="hmuListSummary" class="summary"></div>
       <div id="hmuList"></div>
     </section>

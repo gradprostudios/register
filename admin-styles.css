@@ -313,7 +313,9 @@ button, input, select, textarea{font-family:inherit;}
 .hmu-top .switch-row{margin-bottom:10px;}
 #hmuCapacity{margin:0 0 16px;}
 .hmu-dates-note{padding:10px 12px; border-radius:8px; background:var(--fill); color:var(--muted); font-size:13px; margin:0 0 14px; line-height:1.5;}
-.hmu-slot-head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:10px 16px; background:var(--fill);}
-.hmu-slot-head .muted{font-size:12.5px;}
-.hmu-slot-empty{padding:8px 16px 12px; color:var(--muted); font-size:12.5px;}
+/* One student per block inside an HMU slot row */
+.hmu-person + .hmu-person{margin-top:10px;}
+.hmu-person .muted{font-size:12px;}
+.hmu-person .row-actions{gap:12px; margin-top:2px;}
+.hmu-person.is-off{color:var(--muted);}
 .chip-needs_rebook{background:repeating-linear-gradient(135deg, var(--tint) 0 5px, var(--tint-strong) 5px 10px); color:var(--red-text);}
