@@ -193,6 +193,7 @@ const ERROR_TEXT = {
   invalid_full_name: 'Please check your name details.',
   school_locked: 'You already have a pictorial booking, so your school can’t be changed here. Please contact the studio.',
   slot_full: 'That time slot just filled up. Please pick another time.',
+  hmu_conflict: 'That time clashes with your Hair & Makeup. Your pictorial must be on the same day and start when your Hair & Makeup ends or later. To move to another day, change or cancel your Hair & Makeup first.',
   already_booked: 'You already have a pictorial schedule.',
   already_completed: 'Your pictorial is already done, so you can’t book another schedule. Please contact the studio if you need a retake.',
   wrong_school: 'That slot is for a different school.',
@@ -2044,9 +2045,11 @@ async function openSchedule(mode){
   const school = (bookingState && bookingState.school) || (currentProfile && currentProfile['School']) || '';
   const b = bookingState && bookingState.booking;
   const current = b ? `${fmtManilaDate(b.slot_start)}, ${fmtSlotRange(b.slot_start, b.slot_end)}` : '';
+  const hmu = linkedHmu();
   document.getElementById('schedSub').textContent =
     mode === 'cancel' ? `Current schedule: ${current}`
     : mode === 'reschedule' ? `Current schedule: ${current} · Only open slots are shown. Your change is saved right away.`
+      + (hmu ? ` Your Hair & Makeup is on ${hmuWhen(hmu)}, so only pictorial times on that day from ${fmtManilaTime(hmu.slot_end)} are shown. To move to another day, change or cancel your Hair & Makeup first.` : '')
     : (school ? school + ' · ' : '') + 'Times are in Philippine time (Asia/Manila).';
   document.getElementById('schedCancelNote').classList.toggle('hidden', mode !== 'cancel');
   clearAlert('schedAlert');
@@ -2071,7 +2074,8 @@ async function loadSlots(){
   }
   const current = bookingState && bookingState.booking && bookingState.booking.slot_id;
   slotsCache = data || [];
-  const pickable = slotsCache.filter(s => !(schedMode === 'reschedule' && s.slot_id === current));
+  const hmu = schedMode === 'reschedule' && linkedHmu();
+  const pickable = slotsCache.filter(s => !(schedMode === 'reschedule' && s.slot_id === current) && (!hmu || fitsHmu(s, hmu)));
   slotsByDay = {};
   pickable.forEach(s => { (slotsByDay[manilaDateKey(s.slot_start)] = slotsByDay[manilaDateKey(s.slot_start)] || []).push(s); });
 
@@ -2087,6 +2091,17 @@ async function loadSlots(){
   }
   renderCalendar();
   renderTimes();
+}
+
+// The student's booked Hair & Makeup when it is tied to the pictorial (linked mode), else null.
+function linkedHmu(){
+  return hmuState && hmuState.mode === 'linked' && hmuState.hmu ? hmuState.hmu : null;
+}
+// A pictorial slot keeps a linked HMU valid: same Manila day, starting when the HMU ends or later.
+// Same rule as the database (student_reschedule refuses anything else with hmu_conflict).
+function fitsHmu(slot, hmu){
+  return manilaDateKey(slot.slot_start) === manilaDateKey(hmu.slot_start)
+    && new Date(slot.slot_start).getTime() >= new Date(hmu.slot_end).getTime();
 }
 
 function dayOpen(key){
@@ -2127,7 +2142,9 @@ function renderTimes(){
   const head = document.getElementById('schedDateLabel');
   if (!Object.keys(slotsByDay).length) {
     head.textContent = 'No open slots';
-    box.innerHTML = '<div class="sched-empty">There are no open pictorial slots right now. Please check back later.</div>';
+    box.innerHTML = schedMode === 'reschedule' && linkedHmu()
+      ? '<div class="sched-empty">There are no other open times on your Hair &amp; Makeup day. To move to another day, change or cancel your Hair &amp; Makeup first.</div>'
+      : '<div class="sched-empty">There are no open pictorial slots right now. Please check back later.</div>';
     updateSchedConfirm();
     return;
   }
@@ -2215,8 +2232,9 @@ document.getElementById('schedConfirm').addEventListener('click', async () => {
   if (res.error) {
     if (res.error.handled) return;
     const code = res.error.message;
-    if (code === 'slot_full' || code === 'slot_unavailable' || code === 'slot_not_found' || code === 'same_slot') {
+    if (code === 'slot_full' || code === 'slot_unavailable' || code === 'slot_not_found' || code === 'same_slot' || code === 'hmu_conflict') {
       schedSlotId = null;
+      if (code === 'hmu_conflict') await refreshHmu();
       await loadSlots();
       alertBox('schedAlert', escapeHtml(ERROR_TEXT[code]), 'error');
       return;
