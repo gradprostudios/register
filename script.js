@@ -1098,16 +1098,74 @@ const ADDU_MINOR_COURSE = 'bachelor of arts in interdisciplinary studies';
 const normKey = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
 function isAdduSchool(v){ return normKey(v) === ADDU_SCHOOL; }
 
-// Does the Minor apply for the form with this prefix ('s2' or 'edit_')? In edit mode a locked
-// school has no input, so the saved school is used.
-function adduState(prefix){
-  const schoolEl = document.getElementById(prefix + 'School');
-  const courseEl = document.getElementById(prefix + 'Course');
-  const school = schoolEl ? schoolEl.value : (currentProfile && currentProfile['School']);
-  return { minor: isAdduSchool(school) && currentLevel(prefix) === 'college' && normKey(courseEl && courseEl.value) === ADDU_MINOR_COURSE };
+// ================================================================
+//  COURSES PER SCHOOL (school-courses.js)
+//  A listed school shows only its own courses, and each course only its own majors / minors.
+//  Schools that are not listed keep the full lists from the Details table.
+// ================================================================
+const SCHOOL_COURSE_MAP = (() => {
+  const map = new Map();
+  Object.entries(window.SCHOOL_COURSES || {}).forEach(([school, courses]) => {
+    const list = new Map();
+    Object.entries(courses || {}).forEach(([name, v]) => list.set(normKey(name), {
+      name, majors: (v && v.majors) || [], minors: (v && v.minors) || [],
+    }));
+    map.set(normKey(school), list);
+  });
+  return map;
+})();
+// School of the form with this prefix ('s2' or 'edit_'); a locked school has no input, so the saved one is used.
+function schoolOf(prefix){
+  const el = document.getElementById(prefix + 'School');
+  return el ? el.value : (currentProfile && currentProfile['School']);
+}
+// This school's own course list (Map), or null when the school is not listed (or not a college).
+function schoolCourses(prefix){
+  if (currentLevel(prefix) !== 'college') return null;
+  return SCHOOL_COURSE_MAP.get(normKey(schoolOf(prefix))) || null;
+}
+// The picked course in a listed school ({ name, majors, minors }), or null.
+function pickedCourse(prefix){
+  const list = schoolCourses(prefix);
+  const el = document.getElementById(prefix + 'Course');
+  return list ? (list.get(normKey(el && el.value)) || null) : null;
+}
+// Is the Major box shown? Listed school: only when the picked course has majors. Otherwise always.
+function majorShown(prefix){
+  if (currentLevel(prefix) !== 'college' || !schoolCourses(prefix)) return true;
+  const c = pickedCourse(prefix);
+  return !!(c && c.majors.length);
+}
+// Shows / hides the Major box. After a change (not on first load) a major that no longer fits is cleared.
+function syncMajorField(prefix, init){
+  const input = document.getElementById(prefix + 'Major');
+  const box = input && input.closest('.field, .profile-field');
+  if (!box) return;
+  const shown = majorShown(prefix);
+  box.classList.toggle('hidden', !shown);
+  if (init || !input.value) return;
+  const pool = levelPool(prefix, 'major');
+  if (!shown || !pool.some(v => normKey(v) === normKey(input.value))) input.value = '';
 }
 
-function syncAdduFields(prefix){
+// Does the Minor apply for the form with this prefix ('s2' or 'edit_')? Listed school: the picked
+// course has minors. Otherwise only AdDU + Bachelor of Arts in Interdisciplinary Studies.
+function adduState(prefix){
+  if (schoolCourses(prefix)) {
+    const c = pickedCourse(prefix);
+    return { minor: !!(c && c.minors.length) };
+  }
+  const courseEl = document.getElementById(prefix + 'Course');
+  return { minor: isAdduSchool(schoolOf(prefix)) && currentLevel(prefix) === 'college' && normKey(courseEl && courseEl.value) === ADDU_MINOR_COURSE };
+}
+// Minor suggestions: the picked course's own minors in a listed school, otherwise every minor.
+function minorPool(prefix){
+  const c = pickedCourse(prefix);
+  return c && c.minors.length ? c.minors : distinctMinors();
+}
+
+function syncAdduFields(prefix, init){
+  syncMajorField(prefix, init);
   const on = adduState(prefix).minor;
   const box = document.getElementById(prefix + 'MinorBox');
   if (!box) return;
@@ -1118,7 +1176,7 @@ function syncAdduFields(prefix){
 }
 
 function wireAdduFields(prefix, alertId){
-  setupTypeahead(prefix + 'Minor', prefix + 'MinorList', distinctMinors, {
+  setupTypeahead(prefix + 'Minor', prefix + 'MinorList', () => minorPool(prefix), {
     onInvalid: (why) => { if (why === 'nomatch') alertBox(alertId, 'Please pick a Minor from the suggestions.', 'error'); }
   });
   ['School', 'Course'].forEach(f => {
@@ -1128,7 +1186,7 @@ function wireAdduFields(prefix, alertId){
     el.addEventListener('change', () => syncAdduFields(prefix));
     el.addEventListener('blur', () => setTimeout(() => syncAdduFields(prefix), 200)); // after the type-ahead settles the value
   });
-  syncAdduFields(prefix);
+  syncAdduFields(prefix, true);
 }
 
 // Value to save; when the field is not shown it saves as ''.
@@ -1200,9 +1258,12 @@ function levelPool(prefix, kind){
   if (kind === 'course') {
     if (lvl === 'shs') return distinctStrands();
     if (lvl === 'jhs' || lvl === 'gs') return distinctGrades(lvl);
-    return distinctCourses();
+    const own = schoolCourses(prefix);
+    return own ? [...own.values()].map(c => c.name) : distinctCourses();
   }
-  return (lvl === 'college') ? distinctMajors() : distinctSections();
+  if (lvl !== 'college') return distinctSections();
+  if (schoolCourses(prefix)) { const c = pickedCourse(prefix); return c ? c.majors : []; }
+  return distinctMajors();
 }
 function levelLabel(prefix, kind){
   const L = LEVEL_UI[currentLevel(prefix) || 'college'];
@@ -1213,16 +1274,22 @@ function levelLabel(prefix, kind){
 function levelValues(prefix){
   const lvl = currentLevel(prefix) || 'college';
   const g = (id) => { const el = document.getElementById(prefix + id); return el ? el.value.trim() : ''; };
-  const out = { level: lvl, College: '', Course: '', Major: '', Strand: '', Section: '', Grade: '' };
+  const out = { level: lvl, prefix, College: '', Course: '', Major: '', Strand: '', Section: '', Grade: '' };
   if (lvl === 'shs') { out.Strand = g('Course'); out.Section = g('Major'); }
   else if (lvl === 'jhs' || lvl === 'gs') { out.Grade = g('Course'); out.Section = g('Major'); }
-  else { out.College = g('College'); out.Course = g('Course'); out.Major = g('Major'); }
+  else { out.College = g('College'); out.Course = g('Course'); out.Major = majorShown(prefix) ? g('Major') : ''; }
   return out;
 }
-// Strand / Grade Level are required for their levels. Returns an error message or ''.
+// Strand / Grade Level are required for their levels; a school with its own course list needs one
+// of its courses (and a major from that course, if one is given). Returns an error message or ''.
 function levelError(lv){
   if (lv.level === 'shs' && !lv.Strand) return 'Please select your Strand.';
   if ((lv.level === 'jhs' || lv.level === 'gs') && !lv.Grade) return 'Please select your Grade Level.';
+  if (lv.level === 'college' && lv.prefix && schoolCourses(lv.prefix)) {
+    const c = pickedCourse(lv.prefix);
+    if (!c) return 'Please pick your Course from the list.';
+    if (lv.Major && !c.majors.some(m => normKey(m) === normKey(lv.Major))) return 'Please pick your Major from the list, or leave it blank.';
+  }
   return '';
 }
 
@@ -1264,7 +1331,7 @@ function syncLevelFields(prefix, init){
     if (rest) rest.classList.toggle('hidden', !lvl);
     if (next) next.disabled = !lvl;
   }
-  syncAdduFields(prefix);
+  syncAdduFields(prefix, init);
 }
 
 function wireLevelFields(prefix){
