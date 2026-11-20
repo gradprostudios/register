@@ -1026,13 +1026,19 @@ async function loadLookups(){
   // Each Details column is its own lookup list (rows are unrelated across columns), so the
   // per-list sorting and null filtering happen in the distinct*() helpers below.
   // portal_schools() returns only school + education level (no prices) for schools with settings.
-  const [det, lv] = await Promise.all([
+  const [det, lv, sc] = await Promise.all([
     sb.from('Details').select('Schools, Course, Major, Gender, College, Minor, Strand, Grade, Section')
       .order('Schools', { ascending: true, nullsFirst: false }),
-    sb.rpc('portal_schools')
+    sb.rpc('portal_schools'),
+    sb.from('school_courses').select('school, name, course_majors(name), course_minors(name)')
+      .order('name', { ascending: true })
   ]);
   if (det.error) { console.error(det.error); DETAILS_ROWS = []; }
   else DETAILS_ROWS = det.data || [];
+
+  // If the course tables can't be read, every school keeps the full course list.
+  if (sc.error) console.error(sc.error);
+  setSchoolCourses(sc.error ? [] : (sc.data || []));
 
   SCHOOL_LEVELS = new Map();
   SCHOOLS_LOAD_FAILED = !!lv.error;
@@ -1099,21 +1105,25 @@ const normKey = (v) => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase()
 function isAdduSchool(v){ return normKey(v) === ADDU_SCHOOL; }
 
 // ================================================================
-//  COURSES PER SCHOOL (school-courses.js)
-//  A listed school shows only its own courses, and each course only its own majors / minors.
-//  Schools that are not listed keep the full lists from the Details table.
+//  COURSES PER SCHOOL (tables school_courses, course_majors, course_minors)
+//  A school with courses there shows only its own courses, and each course only its own
+//  majors / minors. Schools with none keep the full lists from the Details table.
 // ================================================================
-const SCHOOL_COURSE_MAP = (() => {
-  const map = new Map();
-  Object.entries(window.SCHOOL_COURSES || {}).forEach(([school, courses]) => {
-    const list = new Map();
-    Object.entries(courses || {}).forEach(([name, v]) => list.set(normKey(name), {
-      name, majors: (v && v.majors) || [], minors: (v && v.minors) || [],
-    }));
-    map.set(normKey(school), list);
+// normalised school -> Map(normalised course -> { name, majors, minors })
+let SCHOOL_COURSE_MAP = new Map();
+const sortNames = (list) => (list || []).map(x => String(x.name || '').replace(/\s+/g, ' ').trim()).filter(Boolean)
+  .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+function setSchoolCourses(rows){
+  SCHOOL_COURSE_MAP = new Map();
+  rows.forEach(r => {
+    const school = normKey(r.school), name = String(r.name || '').replace(/\s+/g, ' ').trim();
+    if (!school || !name) return;
+    if (!SCHOOL_COURSE_MAP.has(school)) SCHOOL_COURSE_MAP.set(school, new Map());
+    SCHOOL_COURSE_MAP.get(school).set(normKey(name), {
+      name, majors: sortNames(r.course_majors), minors: sortNames(r.course_minors),
+    });
   });
-  return map;
-})();
+}
 // School of the form with this prefix ('s2' or 'edit_'); a locked school has no input, so the saved one is used.
 function schoolOf(prefix){
   const el = document.getElementById(prefix + 'School');
