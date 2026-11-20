@@ -1181,3 +1181,23 @@ body.kb-open .cookie-banner, body.kb-open .theme-toggle.floating{display:none !i
 .hmu-day{font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:12px 0 8px;}
 .hmu-times{display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px;}
 .hmu-confirm .btn-inline + .btn-inline{margin-left:0;}
+
+/* ---------------- gradprostudios.com/register: Step 2 as a modal over the main website ---------------- */
+/* script.js adds body.reg-modal and the #regBackdrop frame (the home page) only on the main website */
+.reg-backdrop{display:none}
+body.reg-modal .reg-backdrop{display:block;position:fixed;inset:0;z-index:0;width:100%;height:100%;border:0;pointer-events:none}
+body.reg-modal{overflow:hidden}
+body.reg-modal .step2-page{position:fixed;inset:0;z-index:1;min-height:0;padding:40px 20px;background:rgba(10,8,8,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);overflow-y:auto;overscroll-behavior:contain}
+body.reg-modal .step2-card{margin:auto 0;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.35);animation:reg-in .35s cubic-bezier(.2,.7,.2,1)}
+body.reg-modal .step2-page > .theme-toggle{display:none}
+@keyframes reg-in{from{opacity:0;transform:translateY(18px) scale(.98)}to{opacity:1;transform:none}}
+@media (max-width:700px){
+  body.reg-modal .step2-page{padding:24px 14px}
+  body.reg-modal .step2-card{padding:26px 20px 24px}
+}
+@media (prefers-reduced-motion:reduce){ body.reg-modal .step2-card{animation:none} }
+
+/* gradprostudios.com: spinner while the portal decides where to go (index.html adds html.route-loading) */
+html.route-loading{background:var(--bg)}
+html.route-loading body{visibility:hidden}
+html.route-loading::after{content:"";position:fixed;top:50%;left:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid rgba(178,34,34,.2);border-top-color:#b22222;border-radius:50%;animation:spin .8s linear infinite}

@@ -229,6 +229,8 @@ function rpcFail(alertId, error, fallback){
 
 function expireSession(message){
   clearSession();
+  // Main website: an expired session goes back to the home page, where Student Login opens the modal.
+  if (ON_MAIN_SITE) { window.location.assign('/'); return; }
   closeSchedule();
   currentUser = null;
   currentProfile = null;
@@ -252,7 +254,44 @@ const els = {
   stepPortal: document.getElementById('stepPortal'),
 };
 
+// On gradprostudios.com the portal is served at /login, /register and /dashboard. Keep the address bar
+// on the right one: /register while filling in the details, /dashboard once signed in, /login otherwise.
+// Other addresses (register.gradprostudios.com/) are left alone.
+const ON_MAIN_SITE = /^\/(login|register|dashboard)\/?$/.test(window.location.pathname);
+function syncPortalPath(page){
+  if (!ON_MAIN_SITE) return;
+  const want = '/' + page;
+  if (window.location.pathname !== want) history.replaceState(null, '', want + window.location.search + window.location.hash);
+}
+
+// gradprostudios.com/register: the details form (Step 2) shows as a modal over the main website,
+// which loads behind it in a frame that cannot be clicked or focused.
+function setRegisterModal(on){
+  if (!ON_MAIN_SITE) return;
+  document.body.classList.toggle('reg-modal', on);
+  let frame = document.getElementById('regBackdrop');
+  // Leaving the details form (dashboard, login): remove the home page frame so it never covers the portal
+  if (!on) { if (frame) frame.remove(); return; }
+  if (!frame) {
+    frame = document.createElement('iframe');
+    frame.id = 'regBackdrop';
+    frame.className = 'reg-backdrop';
+    frame.src = '/';
+    frame.title = 'Grad Pro Studios website';
+    frame.tabIndex = -1;
+    frame.setAttribute('aria-hidden', 'true');
+    frame.setAttribute('inert', '');
+    document.body.prepend(frame);
+  }
+}
+
+// Removes the loading spinner index.html shows on the main website, once a screen is ready.
+function routeReady(){ document.documentElement.classList.remove('route-loading'); }
+
 function showView(name){
+  routeReady();
+  syncPortalPath(name === 'step2' ? 'register' : 'login');
+  setRegisterModal(name === 'step2');
   if (name === 'step2') {
     els.authShell.classList.add('hidden');
     els.dashboard.style.display = 'none';
@@ -280,6 +319,9 @@ function showView(name){
 }
 
 function showDashboard(){
+  routeReady();
+  syncPortalPath('dashboard');
+  setRegisterModal(false);
   els.authShell.classList.add('hidden');
   els.step2Shell.classList.add('hidden');
   els.dashboard.style.display = 'block';
@@ -572,6 +614,8 @@ async function handleOAuthReturn(st){
   const label = SOCIAL_PROVIDERS[st.provider] || st.provider;
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
+    // Main website: cancelled Google sign-in just goes back to the home page.
+    if (ON_MAIN_SITE) { window.location.replace('/'); return; }
     showView('login');
     alertBox('loginAlert', 'Sign-in was cancelled or failed. Please try again.', 'error');
     return;
@@ -914,8 +958,16 @@ document.getElementById('cpSaveBtn').addEventListener('click', async () => {
 
 /* -------------------- SIGN OUT -------------------- */
 // Revokes the token server-side (best effort) and clears it locally.
-function signOutStudent(message){
+async function signOutStudent(message){
   const token = getSession();
+  if (ON_MAIN_SITE) {
+    // Main website: finish the logout first, then go to the home page (not the portal's own login page).
+    clearSession();
+    if (token) await sb.rpc('student_logout', { p_token: token }).then(() => {}, () => {});
+    await sb.auth.signOut();
+    window.location.assign('/');
+    return;
+  }
   if (token) sb.rpc('student_logout', { p_token: token }).then(() => {}, () => {});
   sb.auth.signOut();
   expireSession(message);
@@ -2639,6 +2691,7 @@ function updateStep2Preview(){
 document.querySelectorAll('input[name="s2SuffixPlacement"]').forEach(r =>
   r.addEventListener('change', updateStep2Preview));
 
+// On the main website signOutStudent() also takes the student back to the home page.
 document.getElementById('step2Cancel').addEventListener('click', () => signOutStudent());
 
 document.getElementById('step2Form').addEventListener('submit', async (e) => {
@@ -2727,8 +2780,35 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
     if (st) { await handleOAuthReturn(st); return; }
   }
 
+  // "Continue with Google" on the main website's login modal lands here as ?google=1.
+  // Already signed in: go straight to the dashboard. Otherwise start Google sign-in right away.
+  if (new URLSearchParams(window.location.search).get('google') === '1') {
+    history.replaceState(null, '', window.location.pathname);
+    // The spinner stays up the whole time: no portal login page flashes before Google.
+    const token = getSession();
+    if (token) {
+      const { data: profile, error } = await sb.rpc('student_get_profile', { p_token: token });
+      if (!error && profile) {
+        if (isPendingRegistration(profile)) await showStep2(profile);
+        else await loadDashboard(profile);
+        return;
+      }
+      clearSession();   // old or expired session: just sign in again with Google, no "session expired" page
+    }
+    const { error } = await startOAuth({ mode: 'login', provider: 'google' });
+    if (error) {
+      sessionStorage.removeItem(OAUTH_KEY);
+      showView('login');
+      alertBox('loginAlert', escapeHtml(error.message), 'error');
+    }
+    return;
+  }
+
   if (getSession()) {
     await enterPortal();
+  } else if (/^\/register\/?$/.test(window.location.pathname)) {
+    // gradprostudios.com/register without a sign-in: the main website opens its register modal.
+    window.location.replace('/?register');
   } else {
     const params = new URLSearchParams(window.location.search);
     showView(params.get('view') === 'register' ? 'register' : 'login');
