@@ -534,7 +534,7 @@ async function renderSettingsTable(){
     <tbody>${settingsRows.map((r, i) => `
       <tr>
         <td data-label="School"><strong>${escapeHtml(r.school)}</strong></td>
-        <td data-label="Booking">${r.is_enabled ? '<span class="chip chip-approved">Enabled</span>' : '<span class="chip chip-cancelled">Disabled</span>'}</td>
+        <td data-label="Booking">${r.is_enabled ? '<span class="chip chip-approved">Enabled</span>' : '<span class="chip chip-cancelled">Disabled</span>'}${r.lock_changes ? '<div><span class="chip chip-cancelled" title="Booked students can’t reschedule or cancel">Locked</span></div>' : ''}</td>
         <td data-label="Window">${escapeHtml(r.start_date)} → ${escapeHtml(r.end_date)}</td>
         <td data-label="Days">${(r.days_of_week || []).map(d => DOW[d]).join(', ')}</td>
         <td data-label="Hours">${fmtClock(hhmm(r.open_time))} – ${fmtClock(hhmm(r.close_time))}${r.lunch_start ? `<div class="muted">Lunch ${fmtClock(hhmm(r.lunch_start))} – ${fmtClock(hhmm(r.lunch_end))}</div>` : ''}</td>
@@ -543,12 +543,35 @@ async function renderSettingsTable(){
         <td data-label="Upcoming slots">${counts[i].count ?? '—'}</td>
         <td><div class="row-actions">
           <button type="button" class="btn-link" data-edit-school="${escapeHtml(r.school)}">Edit</button>
+          <button type="button" class="btn-link" data-lock-school="${escapeHtml(r.school)}" data-lock="${r.lock_changes ? '0' : '1'}">${r.lock_changes ? 'Unlock schedules' : 'Lock schedules'}</button>
           <button type="button" class="btn-link danger" data-del-school="${escapeHtml(r.school)}">Delete</button>
         </div></td>
       </tr>`).join('')}
     </tbody>`;
 }
 $('settingsTable').addEventListener('click', (e) => {
+  const lockBtn = e.target.closest('[data-lock-school]');
+  if (lockBtn) {
+    const school = lockBtn.dataset.lockSchool;
+    const lock = lockBtn.dataset.lock === '1';
+    clearAlert('settingsAlert');
+    openDialog({
+      title: lock ? 'Lock booked schedules?' : 'Unlock booked schedules?',
+      body: lock
+        ? `<p>Students of <strong>${escapeHtml(school)}</strong> who already booked can no longer reschedule or cancel in the portal. Their schedule is final.</p>
+           <p class="muted">Students who haven’t booked yet can still book open slots (and their schedule is final once booked). Staff can still move bookings in the Bookings tab.</p>`
+        : `<p>Students of <strong>${escapeHtml(school)}</strong> can reschedule or cancel their booking in the portal again.</p>`,
+      okText: lock ? 'Lock schedules' : 'Unlock schedules', danger: lock,
+      onOk: async () => {
+        const { error } = await sb.from('slot_settings').update({ lock_changes: lock, updated_at: new Date().toISOString() }).eq('school', school);
+        if (error) { showErr('dialogAlert', error); return false; }
+        alertBox('settingsAlert', `Booked schedules of <strong>${escapeHtml(school)}</strong> are now <strong>${lock ? 'locked' : 'unlocked'}</strong>.`, 'success');
+        await loadSchools();
+        renderSettingsTable();
+      },
+    });
+    return;
+  }
   const delBtn = e.target.closest('[data-del-school]');
   if (delBtn) {
     const school = delBtn.dataset.delSchool;

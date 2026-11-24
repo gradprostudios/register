@@ -201,6 +201,7 @@ const ERROR_TEXT = {
   booking_closed: 'Pictorial booking is currently closed for your school.',
   slot_not_found: 'That time slot no longer exists. Please pick another time.',
   past_cutoff: 'It is too close to your pictorial schedule to change it online. Please contact the studio.',
+  changes_locked: 'Your pictorial schedule is final. Changes are no longer allowed online. Please contact the studio if you need help.',
   booking_started: 'Your pictorial schedule has already started, so it can’t be changed online. Please contact the studio.',
   same_slot: 'That is already your schedule. Pick a different date or time.',
   request_pending: 'You already have a pending request. Please wait for the studio to respond.',
@@ -1691,6 +1692,10 @@ function isPictorialDone(){
   return !!b && b.status === 'completed';
 }
 const BOOKING_STARTED_TEXT = 'Your pictorial schedule has already started, so it can’t be changed online. Please contact the studio.';
+// Some schools lock bookings: once booked, the schedule is final (no reschedule or cancel online).
+const CHANGES_LOCKED_TEXT = 'Your pictorial schedule is final. Changes are no longer allowed online. Please contact the studio if you need help.';
+function changesLocked(){ return !!(bookingState && bookingState.changes_locked); }
+function changeBlockedText(){ return hasBookingStarted() ? BOOKING_STARTED_TEXT : changesLocked() ? CHANGES_LOCKED_TEXT : ''; }
 
 // The API returns at most 1000 rows per request; a school with short slots can have more.
 async function fetchAvailability(token){
@@ -1717,6 +1722,11 @@ async function refreshBooking(){
     bookingState = null;
   } else {
     bookingState = data;
+    if (data && data.booking && data.booking.status === 'booked') {
+      // Older databases don't have this function yet; treat that as unlocked.
+      const lk = await sb.rpc('portal_changes_locked', { p_token: token });
+      bookingState.changes_locked = !lk.error && lk.data === true;
+    }
     // Fetch slot times so a pending reschedule can show which slot was requested.
     const req = data && data.pending_request;
     if (req && req.requested_slot_id && !slotsCache.some(s => s.slot_id === req.requested_slot_id)) {
@@ -1766,16 +1776,17 @@ function renderDashboardPictorial(loadError){
     const days = daysUntilManila(b.slot_start);
     const when = hasBookingStarted() ? 'Done' : days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`;
     const locked = hasBookingStarted();
+    const noChange = locked || changesLocked();
     sub.textContent = locked ? 'Thanks for coming to your pictorial.' : 'You’re all set. Here’s what’s next.';
     box.innerHTML = `
       <div class="dbx-kick">Your pictorial</div>
       <div class="dbx-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
       <div class="dbx-time">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} · Philippine time</div>
       ${locked ? '' : `<div class="arrive-note">${arriveByHtml(b.slot_start)}</div>`}
-      <div class="dbx-chips">${chip(when, !locked)}${schoolChip}${chip(st.pending_request ? 'Request pending' : 'Booked')}</div>
+      <div class="dbx-chips">${chip(when, !locked)}${schoolChip}${chip(st.pending_request ? 'Request pending' : !locked && changesLocked() ? 'Final' : 'Booked')}</div>
       <div class="dbx-acts">
         <button type="button" class="btn btn-primary" id="dbCalBtn">Add to calendar</button>
-        ${locked ? '' : '<button type="button" class="btn btn-ghost" id="dbReschedBtn">Reschedule</button>'}
+        ${noChange ? '' : '<button type="button" class="btn btn-ghost" id="dbReschedBtn">Reschedule</button>'}
       </div>`;
     return;
   }
@@ -1800,7 +1811,7 @@ document.getElementById('dbPictorial').addEventListener('click', (e) => {
   if (e.target.closest('#dbCalBtn')) { downloadBookingIcs(); return; }
   if (e.target.closest('#dbReschedBtn')) {
     clearAlert('apptAlert');
-    if (hasBookingStarted()) { showTab('tab-appointments'); alertBox('apptAlert', escapeHtml(BOOKING_STARTED_TEXT), 'error'); return; }
+    if (changeBlockedText()) { showTab('tab-appointments'); alertBox('apptAlert', escapeHtml(changeBlockedText()), 'error'); return; }
     openSchedule('reschedule');
   }
 });
@@ -1865,9 +1876,9 @@ function renderAppointments(loadError){
   }
 
   // Students change their own booking straight away (no staff approval) until the slot starts.
-  const locked = hasBookingStarted();
+  const locked = hasBookingStarted() || changesLocked();
   const changeNote = locked
-    ? `<div class="notice-meta">${escapeHtml(BOOKING_STARTED_TEXT)}</div>`
+    ? `<div class="notice-meta">${escapeHtml(changeBlockedText())}</div>`
     : '<div class="notice-meta">You can reschedule or cancel any time before your schedule starts.</div>';
   const actions = `<div class="appt-actions">
        ${locked ? '' : `<button type="button" class="btn btn-primary btn-inline" data-request="reschedule">Reschedule</button>
@@ -1880,7 +1891,7 @@ function renderAppointments(loadError){
       <div class="notice-title">Pictorial <span class="appt-status confirmed">Booked</span></div>
       <div class="appt-when">${escapeHtml(fmtManilaDate(b.slot_start))}</div>
       <div class="notice-body">${escapeHtml(fmtSlotRange(b.slot_start, b.slot_end))} (Philippine time)${st.school ? ' · ' + escapeHtml(st.school) : ''}</div>
-      ${locked ? '' : `<div class="arrive-note">${arriveByHtml(b.slot_start)}</div>`}
+      ${hasBookingStarted() ? '' : `<div class="arrive-note">${arriveByHtml(b.slot_start)}</div>`}
       ${reqHtml}
       ${actions}
       ${changeNote}
@@ -1913,7 +1924,7 @@ document.addEventListener('click', (e) => {
   const reqBtn = e.target.closest('#appointmentsList [data-request]');
   if (reqBtn) {
     clearAlert('apptAlert');
-    if (hasBookingStarted()) { alertBox('apptAlert', escapeHtml(BOOKING_STARTED_TEXT), 'error'); return; }
+    if (changeBlockedText()) { alertBox('apptAlert', escapeHtml(changeBlockedText()), 'error'); return; }
     openSchedule(reqBtn.dataset.request);
   }
 });
