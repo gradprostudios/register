@@ -1063,11 +1063,6 @@ function distinctColleges(){
     .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 }
-function distinctGenders(){
-  const seen = new Set();
-  return DETAILS_ROWS.map(r => (r['Gender'] || '').trim())
-    .filter(v => v && !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()));
-}
 // Old desktop builds stored strands/sections/grades/schools in the Course
 // column with a prefix ("STRAND:STEM 1"). The data is cleaned now, but a
 // PC that hasn't updated yet could still add one — never show those.
@@ -2449,7 +2444,6 @@ function renderProfileGrid(){
       ['Full name', currentProfile['Full Name'] || 'Not set yet'],
       ['Username', currentProfile['Username'] || 'Not set yet'],
       ['Email', currentUser.email],
-      ['Gender', currentProfile['Gender'] || 'Not set yet'],
       ['School', currentProfile['School'] || 'Not set yet'],
       ...eduRows,
       ['Contact number', currentProfile['Contact .'] || 'Not set yet'],
@@ -2508,11 +2502,6 @@ function renderProfileGrid(){
         <label><input type="radio" name="edit_SuffixPlacement" value="first"> After first name</label>
       </div>
     </div>
-    <div class="profile-field suggest-wrap">
-      <label class="eyebrow" for="edit_Gender">Gender<span class="req-star">*</span></label>
-      <input type="text" id="edit_Gender" value="${escapeHtml(p['Gender'] || '')}" autocomplete="off" placeholder="Type to search...">
-      <div class="suggest-list" id="edit_GenderList"></div>
-    </div>
     <div class="profile-field span-2 suggest-wrap">
       <label class="eyebrow" for="edit_School">School<span class="req-star">*</span></label>
       ${schoolLocked
@@ -2561,10 +2550,6 @@ function renderProfileGrid(){
 
   attachAutoCapitalize('edit_');
 
-  setupTypeahead('edit_Gender', 'edit_GenderList', distinctGenders, {
-    required: true,
-    onInvalid: (why) => { if (why === 'nomatch') alertBox('profileAlert', 'Please pick a Gender from the suggestions.', 'error'); }
-  });
   // The school already saved stays selectable even if it has no settings (registered before this rule).
   const editSchools = () => {
     const list = distinctSchools();
@@ -2630,7 +2615,6 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
   const firstName = firstNameCase(val('edit_FirstName'));
   const middleInitial = val('edit_MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('edit_Suffix'));
-  const gender = val('edit_Gender');
   // Locked school: send the saved value exactly as it is, so the server never sees a "change".
   const schoolInput = document.getElementById('edit_School');
   const school = schoolInput ? schoolInput.value.trim() : (currentProfile['School'] || '');
@@ -2638,7 +2622,6 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
 
   if (!lastName) { alertBox('profileAlert', 'Last name is required.', 'error'); return; }
   if (!firstName) { alertBox('profileAlert', 'First name is required.', 'error'); return; }
-  if (!gender) { alertBox('profileAlert', 'Please select your gender.', 'error'); return; }
   if (!school) { alertBox('profileAlert', 'Please select your school.', 'error'); return; }
   if (!contact) { alertBox('profileAlert', 'Contact number is required.', 'error'); return; }
 
@@ -2657,7 +2640,6 @@ document.getElementById('saveProfileBtn').addEventListener('click', async () => 
     'Last Name': lastName,
     'First Name': firstName,
     'Middle Initial': middleInitial,
-    'Gender': gender,
     'School': school,
     'College': lv.College,
     'Course': lv.Course,
@@ -2720,7 +2702,7 @@ async function showStep2(profile){
   currentUser = { username: currentProfile['Username'], email: currentProfile['Email'] };
 
   ['s2LastName','s2FirstName','s2MiddleInitial','s2Suffix',
-   's2Gender','s2School','s2College','s2Course','s2Major','s2Minor',
+   's2School','s2College','s2Course','s2Major','s2Minor',
    's2Contact','s2Socials'].forEach(id => {
     document.getElementById(id).value = '';
   });
@@ -2735,10 +2717,6 @@ async function showStep2(profile){
   if (!step2TypeaheadWired){
     step2TypeaheadWired = true;
     attachAutoCapitalize('s2');
-    setupTypeahead('s2Gender', 's2GenderList', distinctGenders, {
-      required: true,
-      onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a Gender from the suggestions.', 'error'); }
-    });
     setupTypeahead('s2School', 's2SchoolList', distinctSchools, {
       required: true,
       onInvalid: (why) => { if (why === 'nomatch') alertBox('step2Alert', 'Please pick a School from the suggestions.', 'error'); }
@@ -2793,13 +2771,11 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
   const firstName = firstNameCase(val('s2FirstName'));
   const middleInitial = val('s2MiddleInitial').toUpperCase();
   const suffix = formatSuffix(val('s2Suffix'));
-  const gender = val('s2Gender');
   const school = val('s2School');
   const contact = val('s2Contact');
 
   if (!lastName) { alertBox('step2Alert', 'Please enter Last Name.', 'error'); return; }
   if (!firstName) { alertBox('step2Alert', 'Please enter First Name.', 'error'); return; }
-  if (!gender) { alertBox('step2Alert', 'Please select your Gender.', 'error'); return; }
   if (!school) { alertBox('step2Alert', 'Please select your School.', 'error'); return; }
   if (!contact) { alertBox('step2Alert', 'Please enter Contact Number.', 'error'); return; }
   const mobile = normalizePhMobile(contact);
@@ -2824,7 +2800,6 @@ document.getElementById('step2Form').addEventListener('submit', async (e) => {
       'Last Name': lastName,
       'First Name': firstName,
       'Middle Initial': middleInitial,
-      'Gender': gender,
       'School': school,
       'College': lv.College,
       'Course': lv.Course,
