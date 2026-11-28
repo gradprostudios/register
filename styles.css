@@ -1111,6 +1111,8 @@ body.modal-open{overflow:hidden;}
 .dbx-head h1{font-family:var(--font-display); font-size:clamp(26px, 2.6vw, 34px); margin:6px 0 4px; color:var(--fg); overflow-wrap:anywhere;}
 .dbx-head p{margin:0; color:var(--fg-muted); font-size:14px;}
 .dbx-row{display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:18px; align-items:stretch;}
+.dbx-row.solo{grid-template-columns:1fr;}
+.dbx-card[hidden]{display:none;}
 .dbx-card{background:var(--dash-card); border-radius:16px; padding:22px 24px; box-shadow:var(--dash-shadow); min-width:0;}
 .dbx-kick{font-family:var(--font-display); font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--maroon);}
 .dbx-when{font-family:var(--font-display); font-size:24px; font-weight:800; margin:8px 0 2px; color:var(--fg);}

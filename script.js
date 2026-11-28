@@ -1751,6 +1751,9 @@ function renderDashboardPictorial(loadError){
   const school = st.school || (currentProfile && currentProfile['School']) || '';
   const chip = (text, red) => `<span class="dbx-chip${red ? ' red' : ''}">${escapeHtml(text)}</span>`;
   const schoolChip = school ? chip(school) : '';
+  // The card is hidden when there is nothing to show (no pictorial booking and no Hair & Makeup).
+  box.hidden = false;
+  box.closest('.dbx-row').classList.remove('solo');
 
   if (loadError || !bookingState) {
     sub.textContent = 'Always stay updated in your student portal.';
@@ -1796,14 +1799,35 @@ function renderDashboardPictorial(loadError){
     return;
   }
   sub.textContent = 'Always stay updated in your student portal.';
-  box.innerHTML = `
-    <div class="dbx-kick">Your pictorial</div>
-    <div class="dbx-when">Booking opens soon</div>
-    <p class="dbx-text">Pictorial booking isn’t open for your school yet. We’ll post a notice here once it opens.</p>
-    <div class="dbx-chips">${schoolChip}</div>`;
+  // No pictorial booking for this school: show Hair & Makeup instead when it is open, else no card.
+  const hs = hmuState && hmuState.enabled ? hmuState : null;
+  const h = hs && hs.hmu;
+  if (h) {
+    box.innerHTML = `
+      <div class="dbx-kick">Your Hair &amp; Makeup</div>
+      <div class="dbx-when">${escapeHtml(fmtManilaDate(h.slot_start))}</div>
+      <div class="dbx-time">${escapeHtml(fmtSlotRange(h.slot_start, h.slot_end))} · Philippine time</div>
+      <div class="dbx-chips">${chip('Booked')}${schoolChip}</div>
+      <div class="dbx-acts"><button type="button" class="btn btn-ghost" data-goto-tab="tab-appointments">View details</button></div>`;
+    return;
+  }
+  if (hs && hs.can_book && hs.mode !== 'linked') {
+    box.innerHTML = `
+      <div class="dbx-kick">Hair &amp; Makeup</div>
+      <div class="dbx-when">Look your best</div>
+      <p class="dbx-text">Get your hair and makeup done by our team for your graduation photos. Pick any open time.</p>
+      <div class="dbx-chips">${schoolChip}${chip('Optional')}</div>
+      <div class="dbx-acts"><button type="button" class="btn btn-primary" data-goto-tab="tab-appointments">Book Hair &amp; Makeup</button></div>`;
+    return;
+  }
+  box.innerHTML = '';
+  box.hidden = true;
+  box.closest('.dbx-row').classList.add('solo');
 }
 document.getElementById('dbPictorial').addEventListener('click', (e) => {
   if (e.target.closest('#dbCalBtn')) { downloadBookingIcs(); return; }
+  const go = e.target.closest('[data-goto-tab]');
+  if (go) { showTab(go.dataset.gotoTab); window.scrollTo(0, 0); return; }
   if (e.target.closest('#dbReschedBtn')) {
     clearAlert('apptAlert');
     if (changeBlockedText()) { showTab('tab-appointments'); alertBox('apptAlert', escapeHtml(changeBlockedText()), 'error'); return; }
@@ -1995,6 +2019,7 @@ async function refreshHmu(){
   }
   if (!hmuState || !hmuState.enabled || (hmuState.hmu && hmuLocked())) hmuPicking = false;
   renderHmu();
+  if (bookingState) renderDashboardPictorial();   // the dashboard card can show Hair & Makeup
 }
 
 function renderHmu(){
